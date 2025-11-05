@@ -1,0 +1,26 @@
+<div class="upload-card">
+  <h3>Upload Post</h3>
+  <div class="row">
+    <label>Group ID
+      <input type="number" [(ngModel)]="groupId" placeholder="e.g. 1" />
+    </label>
+    <label>Your Name
+      <input [(ngModel)]="userName" placeholder="e.g. Kendall" />
+    </label>
+  </div>
+  <label>Caption
+    <input [(ngModel)]="caption" placeholder="Optional caption" />
+  </label>
+  <label>Image
+    <input type="file" (change)="onFileChange($event)" />
+  </label>
+  <button (click)="submit()" [disabled]="uploading">{{ uploading ? 'Uploading…' : 'Upload' }}</button>
+
+  <div *ngIf="error" class="error">{{ error }}</div>
+
+  <div *ngIf="result" class="result">
+    <div>Uploaded ID: {{ result.id }}</div>
+    <img [src]="result.image_url" alt="Uploaded" />
+  </div>
+</div>
+

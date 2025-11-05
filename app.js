@@ -2,6 +2,7 @@
 (function () {
   const $ = (sel, ctx = document) => ctx.querySelector(sel);
   const $$ = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
+  const API_BASE = window.DG_API_BASE || window.API_BASE || 'http://127.0.0.1:8000/api';
 
   // --- Utilities -----------------------------------------------------------
   const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -22,6 +23,120 @@
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   }
 
+  // Auth Modal -------------------------------------------------------------
+  function openAuthModal() {
+    const signedIn = currentUser && currentUser.id !== 'anon';
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      ${signedIn ? `
+        <div class="grid" style="gap:10px;">
+          <div class="row" style="justify-content:space-between;">
+            <div><strong>Signed in as</strong></div>
+          </div>
+          <div class="row" style="gap:10px;">
+            <span class="group-dot" style="background:#5aa6ff"></span>
+            <div><strong>${currentUser.name}</strong><div class="muted">@${(currentUser.username||currentUser.name||'').toLowerCase()}</div></div>
+          </div>
+          <div class="row" style="justify-content:flex-end; gap:8px;">
+            <button class="ghost-btn" data-close>Close</button>
+            <button class="primary-btn" id="logoutBtn">Sign out</button>
+          </div>
+        </div>
+      ` : `
+        <div class="row" style="gap:8px; margin-bottom:6px;">
+          <button class="ghost-btn" id="tabLogin" aria-pressed="true">Sign In</button>
+          <button class="ghost-btn" id="tabSignup">Create Account</button>
+        </div>
+        <div id="loginForm">
+          <label>Username
+            <input id="loginUser" class="search-input" placeholder="username" />
+          </label>
+          <label>Password
+            <input id="loginPass" class="search-input" type="password" placeholder="••••••" />
+          </label>
+          <div class="row" style="justify-content:flex-end; gap:8px;">
+            <button class="ghost-btn" data-close>Cancel</button>
+            <button class="primary-btn" id="loginBtn">Sign In</button>
+          </div>
+        </div>
+        <div id="signupForm" class="hidden">
+          <label>Full name
+            <input id="signupName" class="search-input" placeholder="Your name" />
+          </label>
+          <label>Username
+            <input id="signupUser" class="search-input" placeholder="username" />
+          </label>
+          <label>Password
+            <input id="signupPass" class="search-input" type="password" placeholder="Create a password" />
+          </label>
+          <div class="row" style="justify-content:flex-end; gap:8px;">
+            <button class="ghost-btn" data-close>Cancel</button>
+            <button class="primary-btn" id="signupBtn">Create Account</button>
+          </div>
+        </div>
+      `}
+    `;
+    openModal(signedIn ? 'Account' : 'Welcome', wrap, {
+      onOpen() {
+        const tabLogin = $('#tabLogin', wrap);
+        const tabSignup = $('#tabSignup', wrap);
+        const loginForm = $('#loginForm', wrap);
+        const signupForm = $('#signupForm', wrap);
+        if (tabLogin && tabSignup) {
+          tabLogin.addEventListener('click', () => {
+            loginForm.classList.remove('hidden');
+            signupForm.classList.add('hidden');
+          });
+          tabSignup.addEventListener('click', () => {
+            signupForm.classList.remove('hidden');
+            loginForm.classList.add('hidden');
+          });
+        }
+        const loginBtn = $('#loginBtn', wrap);
+        if (loginBtn) loginBtn.addEventListener('click', async () => {
+          const username = ($('#loginUser', wrap).value || '').trim();
+          const password = ($('#loginPass', wrap).value || '').trim();
+          try {
+            const me = await postJSON('/auth/login/', { username, password });
+            currentUser = { id: String(me.id), name: me.name || me.username, initials: me.initials || 'ME', username: me.username };
+            try { await loadGroups(); } catch {}
+            refreshAvatar();
+            closeModal();
+            render();
+          } catch (e) {
+            alert(e?.data?.detail || e.message || 'Sign in failed');
+          }
+        });
+        const signupBtn = $('#signupBtn', wrap);
+        if (signupBtn) signupBtn.addEventListener('click', async () => {
+          const name = ($('#signupName', wrap).value || '').trim();
+          const username = ($('#signupUser', wrap).value || '').trim();
+          const password = ($('#signupPass', wrap).value || '').trim();
+          try {
+            const me = await postJSON('/auth/signup/', { name, username, password });
+            currentUser = { id: String(me.id), name: me.name || me.username, initials: me.initials || 'ME', username: me.username };
+            try { await loadGroups(); } catch {}
+            refreshAvatar();
+            closeModal();
+            render();
+          } catch (e) {
+            alert(e?.data?.detail || e.message || 'Signup failed');
+          }
+        });
+        const logoutBtn = $('#logoutBtn', wrap);
+        if (logoutBtn) logoutBtn.addEventListener('click', async () => {
+          try { await postJSON('/auth/logout/', {}); } catch {}
+          currentUser = { id: 'anon', name: 'Guest', initials: 'GU' };
+          groups = [];
+          refreshAvatar();
+          closeModal();
+          if (routeFromHash() !== 'home') location.hash = '#home';
+          render();
+        });
+      }
+    });
+  }
+
   function uid(prefix = 'id') {
     return `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
   }
@@ -35,48 +150,104 @@
     try { return JSON.parse(raw); } catch { return null; }
   }
 
-  // --- Mock Data -----------------------------------------------------------
-  const currentUser = { id: 'u_me', name: 'Kendall Jenkins', initials: 'KJ' };
+  // --- API helpers --------------------------------------------------------
+  async function getJSON(path) {
+    const res = await fetch(path.startsWith('http') ? path : `${API_BASE}${path}`, {
+      credentials: 'include',
+    });
+    if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+    return res.json();
+  }
 
-  const seed = loadState();
-  let groups = seed?.groups || [
-    {
-      id: uid('g'),
-      name: 'Running Group',
-      color: '#2e6bff',
-      description: 'Post a photo of your run every day 🏃‍♀️. Pace doesn\'t matter — consistency does.',
-      members: [
-        { id: 'u1', name: 'Joe' },
-        { id: 'u2', name: 'Dylan' },
-        { id: 'u3', name: 'Alice' },
-        { id: 'u4', name: 'Anne' },
-        currentUser,
-      ],
-      posts: [
-        { id: uid('p'), userId: 'u1', userName: 'Joe', imageUrl: svgPlaceholder('RUN'), caption: 'Morning miles', date: todayISO() },
-        { id: uid('p'), userId: 'u2', userName: 'Dylan', imageUrl: svgPlaceholder('RUN'), caption: 'Track day', date: todayISO() },
-        { id: uid('p'), userId: 'u3', userName: 'Alice', imageUrl: svgPlaceholder('RUN'), caption: 'City loop', date: todayISO() },
-        { id: uid('p'), userId: 'u4', userName: 'Anne', imageUrl: svgPlaceholder('RUN'), caption: 'Hill repeats', date: todayISO() },
-      ],
-      expanded: true,
-    },
-    {
-      id: uid('g'),
-      name: 'Friends Group',
-      color: '#ff6b29',
-      description: 'Daily anything — share a moment or a vibe with friends.',
-      members: [
-        { id: 'u5', name: 'Sam' },
-        { id: 'u6', name: 'Dee' },
-        currentUser,
-      ],
-      posts: [
-        { id: uid('p'), userId: 'u5', userName: 'Sam', imageUrl: svgPlaceholder('FRIENDS', '#ffb86b'), caption: 'Latte art', date: todayISO() },
-      ],
-      expanded: false,
-    },
-  ];
-  saveState();
+  async function postJSON(path, body) {
+    const res = await fetch(path.startsWith('http') ? path : `${API_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+      credentials: 'include',
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data?.detail || `POST ${path} failed`), { data });
+    return data;
+  }
+
+  async function patchJSON(path, body) {
+    const res = await fetch(path.startsWith('http') ? path : `${API_BASE}${path}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+      credentials: 'include',
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data?.detail || `PATCH ${path} failed`), { data });
+    return data;
+  }
+
+  async function deleteJSON(path) {
+    const res = await fetch(path.startsWith('http') ? path : `${API_BASE}${path}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      let data = null; try { data = await res.json(); } catch {}
+      throw Object.assign(new Error(data?.detail || `DELETE ${path} failed`), { data });
+    }
+    try { return await res.json(); } catch { return { ok: true }; }
+  }
+
+  async function uploadForm(path, formData) {
+    const res = await fetch(path.startsWith('http') ? path : `${API_BASE}${path}`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data?.detail || `Upload ${path} failed`), { data });
+    return data;
+  }
+
+  // --- State (loaded from backend) ---------------------------------------
+  let currentUser = { id: 'anon', name: 'Guest', initials: 'GU' };
+  let groups = [];
+
+  async function initAuth() {
+    try {
+      const me = await getJSON('/auth/me/');
+      currentUser = { id: String(me.id), name: me.name || me.username, initials: me.initials || 'ME' };
+    } catch (_) {
+      // not signed in
+    }
+  }
+
+  async function loadGroups() {
+    const resp = await getJSON('/groups/');
+    const apiGroups = resp?.results || [];
+    groups = apiGroups.map((g, idx) => ({
+      id: g.id,
+      name: g.name,
+      color: g.color || '#6b9bff',
+      description: g.description || '',
+      members: [],
+      posts: [],
+      expanded: idx === 0, // first group open
+    }));
+    // Load posts for each group
+    await Promise.all(groups.map(async (g) => {
+      try {
+        const res = await getJSON(`/posts/?group_id=${encodeURIComponent(g.id)}`);
+        g.posts = (res?.results || []).map((p) => ({
+          id: p.id,
+          userId: null,
+          userName: p.user_name || 'Unknown',
+          imageUrl: p.image_url || svgPlaceholder('IMG'),
+          caption: p.caption || '',
+          date: p.date || todayISO(),
+        }));
+      } catch (e) {
+        g.posts = [];
+      }
+    }));
+  }
 
   // --- Simple router -------------------------------------------------------
   function routeFromHash() {
@@ -99,7 +270,22 @@
 
   // Home View ---------------------------------------------------------------
   function renderHome() {
+    const app = document.getElementById('app');
     const container = document.createElement('div');
+    if (!currentUser || currentUser.id === 'anon') {
+      container.innerHTML = `
+        <div class="row" style="justify-content:space-between; margin-bottom:12px;">
+          <h2 style="margin:0">Welcome</h2>
+        </div>
+        <div class="group-card" style="text-align:center; padding:24px;">
+          <div style="font-size:18px; margin-bottom:10px">Sign in to view and post to your groups.</div>
+          <button class="primary-btn" id="homeSignIn">Sign In / Create Account</button>
+        </div>
+      `;
+      app.replaceChildren(container);
+      $('#homeSignIn').addEventListener('click', openAuthModal);
+      return;
+    }
     container.innerHTML = `
       <div class="search-row">
         <input id="homeSearch" class="search-input" placeholder="Search your groups..." />
@@ -107,15 +293,11 @@
       </div>
       <div id="groupList"></div>
     `;
-    const app = document.getElementById('app');
     app.replaceChildren(container);
-
     $('#addGroupBtn').addEventListener('click', () => openGroupEditor());
-
     const list = $('#groupList');
     const q = $('#homeSearch');
-    function paint()
-    {
+    function paint() {
       list.replaceChildren(...groups
         .filter(g => g.name.toLowerCase().includes(q.value.trim().toLowerCase()))
         .map(renderGroupCard));
@@ -125,7 +307,8 @@
   }
 
   function renderGroupCard(group) {
-    const postedByMeToday = group.posts.some(p => p.userId === currentUser.id && p.date === todayISO());
+    const meName = (currentUser && currentUser.name) || '';
+    const postedByMeToday = (group.posts || []).some(p => (p && (p.userId === currentUser.id || p.userName === meName)) && p.date === todayISO());
     const card = document.createElement('section');
     card.className = 'group-card';
     card.innerHTML = `
@@ -146,7 +329,7 @@
       </div>
       <div class="group-content ${group.expanded ? '' : 'hidden'}">
         <div class="post-grid">
-          ${group.posts.map(renderPostCardHTML).join('')}
+          ${(group.posts || []).map(renderPostCardHTML).join('')}
         </div>
         <div class="group-details">
           <div><strong>Description:</strong> ${group.description || '<span class="muted">No description</span>'}</div>
@@ -176,7 +359,8 @@
   }
 
   function renderPostCardHTML(post) {
-    const isMe = post.userId === currentUser.id;
+    if (!post) return '';
+    const isMe = (post.userId === currentUser.id) || (post.userName === (currentUser.name || ''));
     return `
       <article class="post-card" data-post-id="${post.id}">
         <img class="post-thumb" src="${post.imageUrl}" alt="Post by ${post.userName}" />
@@ -190,9 +374,11 @@
 
   function attachPostHandlers(el, groupId) {
     const postId = el.dataset.postId;
-    const group = groups.find(g => g.id === groupId);
-    const post = group.posts.find(p => p.id === postId);
-    const isMe = post.userId === currentUser.id;
+    const group = groups.find(g => String(g.id) === String(groupId));
+    // dataset values are strings; coerce ids to strings for a safe match
+    const post = group ? group.posts.find(p => String(p.id) === String(postId)) : null;
+    if (!group || !post) return; // safety guard
+    const isMe = (post.userId === currentUser.id) || (post.userName === (currentUser.name || ''));
 
     $('.post-thumb', el).addEventListener('click', () => openPostModal(post, group));
     $('button.icon', el).addEventListener('click', () => openPostModal(post, group));
@@ -209,6 +395,19 @@
   function renderGroups() {
     const app = document.getElementById('app');
     const container = document.createElement('div');
+    if (!currentUser || currentUser.id === 'anon') {
+      container.innerHTML = `
+        <div class="row" style="justify-content:space-between; margin-bottom:12px;">
+          <h2 style="margin:0">Your Groups</h2>
+        </div>
+        <div class="group-card" style="text-align:center; padding:24px;">
+          <div class="muted" style="font-size:16px; margin-bottom:10px">Please sign in to view your groups.</div>
+          <button class="primary-btn" id="groupsSignIn">Sign In</button>
+        </div>`;
+      app.replaceChildren(container);
+      $('#groupsSignIn').addEventListener('click', openAuthModal);
+      return;
+    }
     container.innerHTML = `
       <div class="row" style="justify-content:space-between; margin-bottom:12px;">
         <h2 style="margin:0">Your Groups</h2>
@@ -221,7 +420,7 @@
 
     const grid = $('#groupGrid');
     groups.forEach(g => {
-      const postedToday = g.posts.some(p => p.userId === currentUser.id && p.date === todayISO());
+      const postedToday = (g.posts || []).some(p => (p.userId === currentUser.id || p.userName === (currentUser.name||'')) && p.date === todayISO());
       const tile = document.createElement('div');
       tile.className = 'group-tile';
       tile.innerHTML = `
@@ -302,10 +501,12 @@
     const now = new Date();
     const start = new Date(now);
     start.setDate(now.getDate() - 6);
-    return groups.flatMap(g => g.posts).filter(p => new Date(p.date) >= start && p.userId === currentUser.id).length;
+    const me = (currentUser.name || '');
+    return groups.flatMap(g => (g.posts || [])).filter(p => p && new Date(p.date) >= start && (p.userId === currentUser.id || p.userName === me)).length;
   }
   function didPostToday() {
-    return groups.some(g => g.posts.some(p => p.userId === currentUser.id && p.date === todayISO()));
+    const me = (currentUser.name || '');
+    return groups.some(g => (g.posts || []).some(p => p && (p.userId === currentUser.id || p.userName === me) && p.date === todayISO()));
   }
   function calcStreak() {
     // Count consecutive days (including today) where user posted in any group.
@@ -314,7 +515,8 @@
       const d = new Date();
       d.setDate(d.getDate() - i);
       const iso = d.toISOString().slice(0,10);
-      const posted = groups.some(g => g.posts.some(p => p.userId === currentUser.id && p.date === iso));
+      const me = (currentUser.name || '');
+      const posted = groups.some(g => (g.posts || []).some(p => p && (p.userId === currentUser.id || p.userName === me) && p.date === iso));
       if (posted) streak++; else break;
     }
     return streak;
@@ -349,6 +551,10 @@
 
   // Add Post ---------------------------------------------------------------
   function openAddPostDialog(groupId) {
+    if (!currentUser || currentUser.id === 'anon') {
+      openAuthModal();
+      return;
+    }
     const group = groups.find(g => g.id === groupId);
     const wrap = document.createElement('div');
     wrap.innerHTML = `
@@ -377,30 +583,49 @@
 
     const file = $('#fileInput', wrap);
     const preview = $('#previewImg', wrap);
+    let selectedFile = null;
     $('#choose', wrap).addEventListener('click', () => file.click());
     file.addEventListener('change', () => {
       const f = file.files?.[0];
+      selectedFile = f || null;
       if (!f) return;
       const reader = new FileReader();
       reader.onload = () => { preview.src = reader.result; };
       reader.readAsDataURL(f);
     });
-    $('#postBtn', wrap).addEventListener('click', () => {
+    $('#postBtn', wrap).addEventListener('click', async () => {
       const caption = $('#caption', wrap).value.trim();
-      const imageUrl = preview.src;
-      if (!imageUrl) return;
-      group.posts.unshift({ id: uid('p'), userId: currentUser.id, userName: currentUser.name.split(' ')[0] || 'Me', imageUrl, caption, date: todayISO() });
-      group.expanded = true;
-      saveState();
-      closeModal();
-      render();
+      if (!selectedFile) return;
+      try {
+        const form = new FormData();
+        form.append('image', selectedFile);
+        form.append('caption', caption);
+        form.append('group_id', String(groupId));
+        form.append('user_name', (currentUser.name || 'Anonymous'));
+        const p = await uploadForm('/posts/upload/', form);
+        const newPost = {
+          id: p.id,
+          userId: null,
+          userName: p.user_name || currentUser.name || 'Me',
+          imageUrl: p.image_url || preview.src,
+          caption: p.caption || caption,
+          date: p.date || todayISO(),
+        };
+        group.posts.unshift(newPost);
+        group.expanded = true;
+        closeModal();
+        render();
+      } catch (e) {
+        alert(e?.data?.detail || e.message || 'Upload failed');
+      }
     });
   }
 
   // Post Modal --------------------------------------------------------------
   function openPostModal(post, group) {
+    if (!post || !group) return;
     const wrap = document.createElement('div');
-    const isMe = post.userId === currentUser.id;
+    const isMe = (post.userId === currentUser.id) || (post.userName === (currentUser.name || ''));
     wrap.innerHTML = `
       <img src="${post.imageUrl}" alt="Post image" style="width:100%; border-radius:12px;" />
       <div class="row" style="justify-content:space-between;">
@@ -420,6 +645,7 @@
   }
 
   function openEditPostModal(post, group) {
+    if (!post || !group) return;
     const wrap = document.createElement('div');
     wrap.innerHTML = `
       <img src="${post.imageUrl}" alt="Post" style="width:100%; border-radius:12px;"/>
@@ -452,8 +678,9 @@
 
   // Group Editor ------------------------------------------------------------
   function openGroupEditor(group) {
+    if (!currentUser || currentUser.id === 'anon') { openAuthModal(); return; }
     const isNew = !group;
-    const model = group ? { ...group } : { id: uid('g'), name: '', color: '#6b9bff', description: '', members: [currentUser], posts: [] };
+    const model = group ? { ...group } : { name: '', color: '#6b9bff', description: '' };
     const wrap = document.createElement('div');
     wrap.innerHTML = `
       <div class="grid">
@@ -474,36 +701,69 @@
       </div>
     `;
     openModal(isNew ? 'Create Group' : 'Edit Group', wrap, { onOpen(){
-      $('#save', wrap).addEventListener('click', () => {
-        model.name = $('#gName', wrap).value.trim() || 'Untitled Group';
-        model.color = $('#gColor', wrap).value;
-        model.description = $('#gDesc', wrap).value.trim();
-        if (isNew) groups.unshift(model); else {
-          const idx = groups.findIndex(g => g.id === group.id);
-          groups[idx] = { ...groups[idx], ...model };
+      $('#save', wrap).addEventListener('click', async () => {
+        const name = ($('#gName', wrap).value || '').trim() || 'Untitled Group';
+        const color = $('#gColor', wrap).value;
+        const description = ($('#gDesc', wrap).value || '').trim();
+        try {
+          if (isNew) {
+            const created = await postJSON('/groups/', { name, color, description });
+            // Reload from backend to normalize shape and fetch posts
+            await loadGroups();
+            // Expand the newly created group on Home
+            const ng = groups.find(x => String(x.id) === String(created.id));
+            if (ng) ng.expanded = true;
+            // Navigate to Home to surface the new group
+            if (routeFromHash() !== 'home') location.hash = '#home';
+          } else {
+            const g = await patchJSON(`/groups/${group.id}/`, { name, color, description });
+            const idx = groups.findIndex(x => x.id === group.id);
+            if (idx !== -1) groups[idx] = { ...groups[idx], ...g };
+          }
+          saveState();
+          closeModal();
+          render();
+        } catch (e) {
+          alert(e?.data?.detail || e.message || 'Save failed');
         }
-        saveState();
-        closeModal();
-        render();
       });
-      if (!isNew) $('#delete', wrap).addEventListener('click', () => {
-        groups = groups.filter(g => g.id !== group.id);
-        saveState();
-        closeModal();
-        render();
+      if (!isNew) $('#delete', wrap).addEventListener('click', async () => {
+        try {
+          await deleteJSON(`/groups/${group.id}/`);
+          groups = groups.filter(g => g.id !== group.id);
+          saveState();
+          closeModal();
+          render();
+        } catch (e) {
+          alert(e?.data?.detail || e.message || 'Delete failed');
+        }
       });
     }});
   }
 
   // Boot -------------------------------------------------------------------
-  // Set avatar initials
-  const initials = (currentUser.name || '').split(' ').map(s => s[0]).slice(0,2).join('').toUpperCase();
-  const avatar = document.querySelector('.avatar');
-  if (avatar) avatar.textContent = initials || currentUser.initials || 'ME';
+  function refreshAvatar() {
+    const avatar = document.querySelector('.avatar');
+    const initials = (currentUser.name || '').split(' ').map(s => s[0]).slice(0,2).join('').toUpperCase();
+    if (avatar) avatar.textContent = initials || currentUser.initials || 'ME';
+  }
 
-  // Initial render
-  if (!location.hash) location.hash = '#home';
-  render();
+  const userBtn = document.getElementById('userBtn');
+  if (userBtn) userBtn.addEventListener('click', openAuthModal);
+
+  async function init() {
+    try { await initAuth(); } catch {}
+    try {
+      if (currentUser && currentUser.id !== 'anon') {
+        await loadGroups();
+      } else {
+        groups = [];
+      }
+    } catch {}
+    refreshAvatar();
+    if (!location.hash) location.hash = '#home';
+    render();
+  }
+
+  init();
 })();
-
-

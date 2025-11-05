@@ -1,0 +1,8 @@
+.upload-card { padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; max-width: 480px; }
+.row { display: flex; gap: 12px; }
+label { display: block; margin: 8px 0; }
+input[type="file"] { display: block; }
+.error { color: #b91c1c; margin-top: 8px; }
+.result { margin-top: 12px; }
+.result img { max-width: 100%; border-radius: 8px; }
+
