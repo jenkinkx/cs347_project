@@ -687,6 +687,12 @@
         form.append('group_id', String(groupId));
         form.append('user_name', (currentUser.name || 'Anonymous'));
         const p = await uploadForm('/posts/upload/', form);
+
+        // I dont know if we want to just keep using the django api or if we want to use s3 for now.
+        
+        // const s3 = await postJSON('/upload-url/', { kind: 'groups', id: groupId, filename: selectedFile.name, contentType: selectedFile.type });
+        // await fetch(s3.uploadUrl, { method: 'PUT', headers: { 'Content-Type': selectedFile.type }, body: selectedFile });
+        // await postJSON('/confirm-upload/', { group_id: groupId, key: s3.key, caption });
         const newPost = {
           id: p.id,
           userId: null,

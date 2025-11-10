@@ -6,15 +6,14 @@ from django.utils.dateparse import parse_date
 from django.contrib.auth.decorators import login_required
 from .models import Group, Post
 
-"""
-s3 imports
-"""
+# DRF
 from django.utils import timezone
-from ..storage.s3_utils import presign_download
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from ..storage.s3_utils import build_key, presign_upload, presign_download
+
+# S3
+from storage.s3_utils import build_key, presign_upload, presign_download
 import json
 
 
@@ -145,44 +144,44 @@ def group_detail(request, group_id: int):
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated])  # switch to AllowAny if testing without auth
+def start_photo_upload(request):
+    """
+    Body: { "kind":"users"|"groups", "id":123, "filename":"photo.jpg", "contentType":"image/jpeg" }
+    Returns: { "uploadUrl": "...", "key": "groups/123/<uuid>.jpg" }
+    """
+    kind = request.data.get("kind", "users")
+    obj_id = request.data.get("id", "temp")
+    filename = request.data.get("filename", "photo.jpg")
+    content_type = request.data.get("contentType", "image/jpeg")
+
+    key = build_key(kind, obj_id, filename)
+    url = presign_upload(key, content_type)
+    return Response({"uploadUrl": url, "key": key})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])  # switch to AllowAny if testing without auth
 def create_post_from_s3(request):
     """
-    Body:
-      {
-        "group_id": 123,
-        "key": "groups/123/<uuid>.jpg",
-        "caption": "optional"
-      }
+    Body: { "group_id":123, "key":"groups/123/<uuid>.jpg", "caption":"optional" }
     """
     group_id = request.data.get("group_id")
     key = (request.data.get("key") or "").strip()
     caption = (request.data.get("caption") or "").strip()
-
     if not group_id or not key:
-        return Response({"detail":"group_id and key required"}, status=400)
+        return Response({"detail": "group_id and key required"}, status=400)
 
     group = get_object_or_404(Group, pk=group_id)
 
-    # Prefer storing the S3 key on the Post (see Step 2).
     if hasattr(Post, "image_key"):
-        post = Post.objects.create(
-            group=group,
-            user_name=request.user.get_username(),
-            caption=caption,
-            image_key=key,
-        )
+        post = Post.objects.create(group=group, user_name=request.user.get_username(),
+                                   caption=caption, image_key=key)
     else:
-        # Fallback: create without local image; you'll still return a view URL.
-        post = Post.objects.create(
-            group=group,
-            user_name=request.user.get_username(),
-            caption=caption,
-        )
+        post = Post.objects.create(group=group, user_name=request.user.get_username(),
+                                   caption=caption)
 
-    # Private bucket (recommended): short-lived view URL
-    image_url = presign_download(key)
-
+    image_url = presign_download(key)   # private bucket: short-lived GET
     return Response({
         "id": post.id,
         "user_name": post.user_name,
