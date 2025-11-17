@@ -7,9 +7,17 @@ __pycache__/
 venv/
 ENV/
 env/
+myenv/
+backend/venv/
 db.sqlite3
 media/
 staticfiles/
+
+# Env files
+.env
+*.env
+backend/.env
+
 
 # Node / Angular
 node_modules/
