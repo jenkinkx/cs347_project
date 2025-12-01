@@ -1,0 +1,18 @@
+{% extends "web/base.html" %}
+{% block title %}Post #{{ object.id }} · Daily Groups{% endblock %}
+{% block content %}
+  <div class="row" style="justify-content:space-between;">
+    <h1 style="margin:0;">Post #{{ object.id }}</h1>
+    <div class="row" style="gap:8px;">
+      {% if object.author_id == request.user.id %}
+        <a class="ghost-btn" href="{% url 'post_edit' object.pk %}">Edit</a>
+        <a class="ghost-btn" href="{% url 'post_delete' object.pk %}">Delete</a>
+      {% endif %}
+    </div>
+  </div>
+  <p class="muted">By {{ object.author.username }} in <a href="{% url 'group_detail' object.group_id %}">{{ object.group.name }}</a></p>
+  <img class="post-thumb" src="{{ object.image.url }}" alt="Image" style="width:100%; max-width:720px;" />
+  <p>{{ object.caption }}</p>
+  <p class="muted">{{ object.date|date:"Y-m-d" }}</p>
+{% endblock %}
+

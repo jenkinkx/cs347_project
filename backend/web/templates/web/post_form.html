@@ -1,0 +1,30 @@
+{% extends 'web/base.html' %}
+{% block title %}Post Form{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Post</h2>
+    <form method="post" enctype="multipart/form-data">{% csrf_token %}
+      {{ form.as_p }}
+      <div id="preview" class="card" style="display:none">
+        <strong>Image preview</strong>
+        <img id="previewImg" class="responsive" alt="preview" />
+      </div>
+      <p>
+        <button class="btn" type="submit">Save</button>
+        <a class="btn secondary" href="{% url 'post_list' %}">Cancel</a>
+      </p>
+    </form>
+  </div>
+  <script>
+    const input = document.querySelector('input[type=file][name=image]');
+    if (input) {
+      input.addEventListener('change', (e)=>{
+        const file = input.files && input.files[0];
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        document.getElementById('previewImg').src = url;
+        document.getElementById('preview').style.display = 'block';
+      });
+    }
+  </script>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends 'web/base.html' %}
+{% block title %}Invite • {{ group.name }}{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Invite to {{ group.name }}</h2>
+    <p>Share this link with a friend to let them join your group:</p>
+    <p><input class="search-input" value="{{ link }}" readonly onclick="this.select();document.execCommand('copy');"/></p>
+    <p class="muted">This link expires on {{ invite.expires_at|date:'Y-m-d H:i' }}.</p>
+    <p><a class="btn" href="{% url 'group_detail' group.pk %}">Back to Group</a></p>
+  </div>
+{% endblock %}
+

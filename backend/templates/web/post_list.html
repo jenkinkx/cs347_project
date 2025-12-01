@@ -1,0 +1,56 @@
+{% extends "web/base.html" %}
+{% block title %}Posts · Daily Groups{% endblock %}
+{% block content %}
+  <div class="row" style="justify-content:space-between;">
+    <h1 style="margin:0;">Posts</h1>
+    <div class="row" style="gap:8px;">
+      <a class="ghost-btn" href="{% url 'export_posts_csv' %}">Export CSV</a>
+      <a class="ghost-btn" href="{% url 'import_posts_csv' %}">Import CSV</a>
+      <a class="primary-btn" href="{% url 'post_create' %}">+ New Post</a>
+    </div>
+  </div>
+  <form method="get" class="row" style="margin:10px 0;">
+    <input class="search-input" type="search" name="q" value="{{ request.GET.q }}" placeholder="Search captions..." />
+    <button class="ghost-btn" type="submit">Search</button>
+  </form>
+  <form method="post" action="{% url 'post_bulk' %}">
+    {% csrf_token %}
+    <div class="row" style="gap:8px; margin: 6px 0;">
+      <select name="action" class="search-input">
+        <option value="delete">Delete selected</option>
+      </select>
+      <button class="ghost-btn" type="submit">Apply</button>
+    </div>
+    <div class="post-grid">
+      {% for p in posts %}
+        <div class="post-card">
+          <img class="post-thumb" src="{{ p.image.url }}" alt="Post" />
+          <div class="post-meta">
+            <span class="me">{{ p.author.username }}</span>
+            <span>{{ p.date|date:"Y-m-d" }}</span>
+          </div>
+          <div class="row" style="justify-content:space-between; padding: 0 10px 10px;">
+            <div><label><input type="checkbox" name="ids" value="{{ p.id }}" /> Select</label></div>
+            <div class="row" style="gap:8px;">
+              <a class="ghost-btn" href="{% url 'post_detail' p.pk %}">Open</a>
+              {% if p.author_id == request.user.id %}
+                <a class="ghost-btn" href="{% url 'post_edit' p.pk %}">Edit</a>
+                <a class="ghost-btn" href="{% url 'post_delete' p.pk %}">Delete</a>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% empty %}
+        <p class="muted">No posts yet.</p>
+      {% endfor %}
+    </div>
+  </form>
+  {% if is_paginated %}
+  <div class="row" style="justify-content:center; margin-top:12px;">
+    {% if page_obj.has_previous %}<a class="ghost-btn" href="?page={{ page_obj.previous_page_number }}">Prev</a>{% endif %}
+    <span class="muted" style="padding:0 8px;">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a class="ghost-btn" href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+  </div>
+  {% endif %}
+{% endblock %}
+

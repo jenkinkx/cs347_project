@@ -1,0 +1,38 @@
+{% extends "web/base.html" %}
+{% block title %}Groups · Daily Groups{% endblock %}
+{% block content %}
+  <div class="row" style="justify-content:space-between;">
+    <h1 style="margin:0;">Groups</h1>
+    <a class="primary-btn" href="{% url 'group_create' %}">+ New Group</a>
+  </div>
+  <form method="get" class="row" style="margin:10px 0;">
+    <input class="search-input" type="search" name="q" value="{{ request.GET.q }}" placeholder="Search groups..." />
+    <button class="ghost-btn" type="submit">Search</button>
+  </form>
+  <div class="grid cols-3">
+    {% for g in groups %}
+      <div class="group-tile">
+        <div class="tile-head">
+          <span class="group-dot" style="background: {{ g.color }}"></span>
+          <div>
+            <div style="font-weight:600">{{ g.name }}</div>
+            <div class="muted" style="font-size:13px">{{ g.description|default:"No description" }}</div>
+          </div>
+          <div class="tile-actions">
+            <a class="ghost-btn" href="{% url 'group_detail' g.pk %}">Open</a>
+          </div>
+        </div>
+      </div>
+    {% empty %}
+      <p class="muted">No groups found.</p>
+    {% endfor %}
+  </div>
+  {% if is_paginated %}
+  <div class="row" style="justify-content:center; margin-top:12px;">
+    {% if page_obj.has_previous %}<a class="ghost-btn" href="?page={{ page_obj.previous_page_number }}">Prev</a>{% endif %}
+    <span class="muted" style="padding:0 8px;">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a class="ghost-btn" href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+  </div>
+  {% endif %}
+{% endblock %}
+

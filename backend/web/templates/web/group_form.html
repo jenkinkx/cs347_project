@@ -1,0 +1,15 @@
+{% extends 'web/base.html' %}
+{% block title %}Group Form{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Group</h2>
+    <form method="post">{% csrf_token %}
+      {{ form.as_p }}
+      <p>
+        <button class="btn" type="submit">Save</button>
+        <a class="btn secondary" href="{% url 'group_list' %}">Cancel</a>
+      </p>
+    </form>
+  </div>
+{% endblock %}
+

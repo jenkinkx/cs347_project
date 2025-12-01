@@ -1,0 +1,16 @@
+{% extends "web/base.html" %}
+{% block title %}Profile · Daily Groups{% endblock %}
+{% block content %}
+  <h1>Profile</h1>
+  <p class="muted">Signed in as {{ request.user.username }}</p>
+  <form method="post">
+    {% csrf_token %}
+    <div class="grid" style="gap:10px;">
+      <label>Bio {{ form.bio }}</label>
+      <div class="row" style="justify-content:flex-end; gap:8px;">
+        <button class="primary-btn" type="submit">Save</button>
+      </div>
+    </div>
+  </form>
+{% endblock %}
+

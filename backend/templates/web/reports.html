@@ -1,0 +1,25 @@
+{% extends "web/base.html" %}
+{% block title %}Reports · Daily Groups{% endblock %}
+{% block content %}
+  <h1>Posting Activity (7 days)</h1>
+  <div id="bars" class="grid" style="grid-template-columns: repeat(7, 1fr); gap: 10px; align-items: end; height: 180px;"></div>
+  <div id="lbls" class="row" style="justify-content:space-between; margin-top:8px;"></div>
+  <script>
+    const labels = {{ labels|safe }};
+    const counts = {{ counts|safe }};
+    const bars = document.getElementById('bars');
+    const lbls = document.getElementById('lbls');
+    const max = Math.max(1, ...counts);
+    labels.forEach((d, i) => {
+      const c = counts[i] || 0;
+      const h = 20 + Math.round((c / max) * 150);
+      const div = document.createElement('div');
+      div.title = `${d}: ${c}`;
+      div.style.cssText = `background: linear-gradient(180deg, #6be6a7, #3ed38a); height:${h}px; border-radius:6px 6px 0 0;`;
+      bars.appendChild(div);
+      const l = document.createElement('div');
+      l.className = 'muted'; l.style.fontSize = '12px'; l.textContent = d.slice(5);
+      lbls.appendChild(l);
+    });
+  </script>
+{% endblock %}

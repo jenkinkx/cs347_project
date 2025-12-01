@@ -1,0 +1,31 @@
+{% extends 'web/base.html' %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Activity (last 7 days)</h2>
+    <canvas id="chart" width="800" height="300" style="max-width:100%"></canvas>
+  </div>
+  <script>
+    const labels = {{ labels|safe }};
+    const values = {{ values|safe }};
+    const canvas = document.getElementById('chart');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0,0,W,H);
+    const max = Math.max(1, ...values);
+    const padding = 30;
+    const bw = (W - padding*2) / values.length;
+    ctx.fillStyle = '#9bbcff';
+    values.forEach((v,i)=>{
+      const h = (H - padding*2) * (v/max);
+      const x = padding + i*bw;
+      const y = H - padding - h;
+      ctx.fillRect(x+8, y, bw-16, h);
+      ctx.fillStyle = '#ccccff'; ctx.font = '12px system-ui'; ctx.fillText(labels[i].slice(5), x+8, H-10);
+      ctx.fillStyle = '#9bbcff';
+    });
+    ctx.fillStyle = '#98a3bd'; ctx.font = '12px system-ui';
+    ctx.fillText('posts/day', 8, 16);
+  </script>
+{% endblock %}
+

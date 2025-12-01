@@ -1,0 +1,17 @@
+{% extends "web/base.html" %}
+{% block title %}Import Posts · Daily Groups{% endblock %}
+{% block content %}
+  <h1>Import Posts (CSV)</h1>
+  <p class="muted">Upload a CSV with columns: <code>group_name, caption</code>.</p>
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <div class="grid" style="gap:10px;">
+      <label>File {{ form.file }}</label>
+      <div>
+        <button class="primary-btn" type="submit">Import</button>
+      </div>
+    </div>
+  </form>
+{% endblock %}
+

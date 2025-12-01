@@ -1,0 +1,17 @@
+{% extends "web/base.html" %}
+{% block title %}Sign In · Daily Groups{% endblock %}
+{% block content %}
+  <h1>Sign In</h1>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <div class="grid" style="gap:10px;">
+      <label>Username {{ form.username }}</label>
+      <label>Password {{ form.password }}</label>
+      <div>
+        <button type="submit" class="primary-btn">Sign In</button>
+      </div>
+    </div>
+  </form>
+{% endblock %}
+
