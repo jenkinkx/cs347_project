@@ -7,14 +7,18 @@ from . import frontend as fe
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # Server-rendered pages (Basic CRUD, auth, etc.)
+    path("", include("web.urls")),
+    # API endpoints for SPA and others
     path("api/", include("posts.urls")),
     path("api/auth/", include("config.auth_urls")),
+    # Mount SPA under /app/ (index and static assets)
+    path("app/", fe.spa, name="spa_root"),
+    re_path(r"^app/(?P<path>.*)$", fe.spa, name="spa_assets"),
 ]
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Serve uploaded media (development and demo deployment)
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
-# Catch-all for the SPA frontend: anything not matched above goes to Angular index
-urlpatterns += [
-    re_path(r"^(?P<path>.*)$", fe.spa, name="spa"),
-]
+# Custom error handlers
+handler404 = "web.views.custom_404"

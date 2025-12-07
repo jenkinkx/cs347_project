@@ -1,7 +1,7 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { UploadService, PostDto } from '../services/upload.service';
+import { ApiService, PostDto } from '../services/api.service';
 
 @Component({
   selector: 'app-upload',
@@ -14,12 +14,11 @@ export class UploadComponent {
   selectedFile?: File;
   caption = '';
   groupId: number | null = null;
-  userName = 'Kendall';
   uploading = false;
   result?: PostDto;
   error?: string;
 
-  constructor(private uploadService: UploadService) {}
+  constructor(private apiService: ApiService) {}
 
   onFileChange(event: Event) {
     const input = event.target as HTMLInputElement;
@@ -34,12 +33,11 @@ export class UploadComponent {
     this.error = undefined;
     this.uploading = true;
     this.result = undefined;
-    this.uploadService
+    this.apiService
       .uploadPost({
         image: this.selectedFile,
         caption: this.caption,
-        groupId: this.groupId,
-        userName: this.userName || 'Anonymous',
+        group: this.groupId,
       })
       .subscribe({
         next: (res) => {

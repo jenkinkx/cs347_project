@@ -1,0 +1,19 @@
+{% extends "web/base.html" %}
+{% block title %}{{ view.object|default_if_none:'New Post' }} · Daily Groups{% endblock %}
+{% block content %}
+  <h1>{{ view.object|default_if_none:'New Post' }}</h1>
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <div class="grid" style="gap:10px;">
+      <label>Group {{ form.group }}</label>
+      <label>Caption {{ form.caption }}</label>
+      <label>Image {{ form.image }}</label>
+      <div class="row" style="justify-content:flex-end; gap:8px;">
+        <a class="ghost-btn" href="{% if view.object %}{% url 'post_detail' view.object.pk %}{% else %}{% url 'post_list' %}{% endif %}">Cancel</a>
+        <button class="primary-btn" type="submit">Save</button>
+      </div>
+    </div>
+  </form>
+{% endblock %}
+

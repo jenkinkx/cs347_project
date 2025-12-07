@@ -1,0 +1,27 @@
+:root{--bg:#0b1024;--surface:#0f1530;--text:#ebf4ff;--muted:#98a3bd;--accent:#4ad295;--accent-2:#2e6bff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial}
+a{color:var(--accent-2);text-decoration:none}a:hover{text-decoration:underline}
+.container{max-width:980px;margin:0 auto;padding:16px}
+.nav{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.02)}
+.nav a{padding:6px 10px;border-radius:8px}
+.nav .brand{font-weight:700;margin-right:auto;color:#bfe1ff}
+.nav .right{margin-left:auto;display:flex;gap:8px}
+.btn{display:inline-block;background:var(--accent-2);color:#fff;border:0;border-radius:10px;padding:8px 12px;cursor:pointer}
+.btn.secondary{background:transparent;color:var(--text);border:1px solid rgba(255,255,255,.16)}
+.btn.danger{background:#e74c3c}
+.card{background:var(--surface);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px;margin:10px 0}
+.grid{display:grid;gap:12px}
+.grid.cols-2{grid-template-columns:1fr 1fr}
+.grid.cols-3{grid-template-columns:repeat(3,1fr)}
+label{display:block;margin:8px 0 4px;color:var(--muted)}
+input[type=text],input[type=password],textarea,select{width:100%;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.16);background:#0b1230;color:var(--text)}
+input[type=file]{color:var(--muted)}
+.table{width:100%;border-collapse:collapse}
+.table th,.table td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08)}
+.muted{color:var(--muted)}
+.messages{margin:10px 0}
+.messages .msg{padding:10px;border-radius:10px;margin:6px 0;background:rgba(255,255,255,.06)}
+.pagination{display:flex;gap:6px;align-items:center;margin-top:10px}
+.pagination a,.pagination span{padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.16)}
+img.responsive{max-width:100%;height:auto;border-radius:12px;border:1px solid rgba(255,255,255,.08)}
+@media(max-width:800px){.grid.cols-2,.grid.cols-3{grid-template-columns:1fr}}

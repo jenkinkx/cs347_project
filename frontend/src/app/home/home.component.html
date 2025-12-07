@@ -1,0 +1,60 @@
+<div class="home-container">
+  <header>
+    <h1>Group Site</h1>
+    <nav>
+      <a routerLink="/profile">Profile</a>
+      <button (click)="logout()">Logout</button>
+    </nav>
+  </header>
+
+  <main>
+    <div class="groups-panel">
+      <h2>Groups</h2>
+      <ul>
+        <li *ngFor="let group of groups" (click)="selectGroup(group.id)" [class.selected]="group.id === selectedGroupId">
+          {{ group.name }}
+        </li>
+      </ul>
+    </div>
+
+    <div class="posts-panel">
+      <div class="posts-header">
+        <h2>Posts</h2>
+        <input type="text" placeholder="Search posts..." [ngModel]="searchTerm" (ngModelChange)="onSearchChange($event)">
+      </div>
+      <div *ngIf="posts.length === 0">No posts yet.</div>
+      <div class="bulk-actions" *ngIf="posts.length > 0">
+        <input type="checkbox" (change)="selectAllPosts()" [checked]="isAllMyPostsSelected"> Select All (My Posts)
+        <button (click)="clearSelection()" [disabled]="selectedPostIds.length === 0">Clear Selection</button>
+        <button (click)="bulkDeleteSelectedPosts()" [disabled]="selectedPostIds.length === 0">Delete Selected ({{ selectedPostIds.length }})</button>
+        <button (click)="downloadMyPosts()">Export My Posts</button>
+      </div>
+      <ul>
+        <li *ngFor="let post of posts">
+          <div class="post">
+            <div class="post-header">
+              <input type="checkbox" *ngIf="isAuthor(post)" [checked]="isPostSelected(post.id)" (change)="togglePostSelection(post.id)">
+              <div class="post-author">{{ post.author }}</div>
+              <div class="post-menu" *ngIf="isAuthor(post)">
+                <button class="menu-btn">⋮</button>
+                <div class="menu-content">
+                  <a (click)="editPost(post)">Edit</a>
+                  <a (click)="deletePost(post.id)">Delete</a>
+                </div>
+              </div>
+            </div>
+            <img [src]="post.image" alt="Post image">
+            <div class="post-content">
+              <div class="post-caption">{{ post.caption }}</div>
+            </div>
+          </div>
+        </li>
+      </ul>
+      <div class="pagination-controls" *ngIf="count > 10">
+        <button (click)="previousPage()" [disabled]="currentPage === 1">Previous</button>
+        <span>Page {{ currentPage }} of {{ Math.ceil(count / 10) }}</span>
+        <button (click)="nextPage()" [disabled]="currentPage * 10 >= count">Next</button>
+      </div>
+    </div>
+  </main>
+</div>

@@ -1,0 +1,74 @@
+{% extends 'web/base.html' %}
+{% block title %}Posts • Daily Groups{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Posts</h2>
+    <form method="get" class="grid cols-3">
+      <p>
+        <label>Search</label>
+        <input type="text" name="q" value="{{ q }}" placeholder="caption contains..." />
+      </p>
+      <p>
+        <label>Group</label>
+        <select name="group">
+          <option value="">All</option>
+          {% for g in groups %}
+            <option value="{{ g.pk }}" {% if group_sel|stringformat:'s' == g.pk|stringformat:'s' %}selected{% endif %}>{{ g.name }}</option>
+          {% endfor %}
+        </select>
+      </p>
+      <p style="align-self:end;">
+        <button class="btn" type="submit">Filter</button>
+        <a class="btn secondary" href="{% url 'post_create' %}">New Post</a>
+        <a class="btn secondary" href="{% url 'export_posts_csv' %}">Export CSV</a>
+        <a class="btn secondary" href="{% url 'import_posts_csv' %}">Import CSV</a>
+      </p>
+    </form>
+
+    <form method="post" action="{% url 'post_bulk' %}">{% csrf_token %}
+      <input type="hidden" name="action" value="delete" />
+      <table class="table">
+        <thead><tr><th></th><th>Preview</th><th>Caption</th><th>Author</th><th>Group</th><th>Date</th><th>Actions</th></tr></thead>
+        <tbody>
+          {% for p in posts %}
+          <tr>
+            <td>
+              {% if request.user == p.author or request.user.is_superuser %}
+                <input type="checkbox" name="ids" value="{{ p.pk }}" />
+              {% endif %}
+            </td>
+            <td>{% if p.image %}<img src="{{ p.image.url }}" class="responsive" style="max-width:120px"/>{% else %}<span class="muted">(no image)</span>{% endif %}</td>
+            <td><a href="{% url 'post_detail' p.pk %}">{{ p.caption|default:'(no caption)' }}</a></td>
+            <td>{{ p.author.username }}</td>
+            <td>{% if p.group %}<a href="{% url 'group_detail' p.group.pk %}">{{ p.group.name }}</a>{% endif %}</td>
+            <td>{{ p.date }}</td>
+            <td>
+              {% if request.user == p.author or request.user.is_superuser %}
+                <a href="{% url 'post_edit' p.pk %}">Edit</a>
+                |
+                <a href="{% url 'post_delete' p.pk %}">Delete</a>
+              {% else %}
+                <span class="muted">read-only</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="muted">No posts found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p>
+        <button class="btn danger" type="submit">Delete selected</button>
+      </p>
+    </form>
+
+    <div class="pagination">
+      {% if is_paginated %}
+        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}&q={{ q }}&group={{ group_sel }}">Prev</a>{% endif %}
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}&q={{ q }}&group={{ group_sel }}">Next</a>{% endif %}
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}
+

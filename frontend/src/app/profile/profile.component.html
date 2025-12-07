@@ -1,0 +1,14 @@
+<div class="profile-container">
+  <h1>Profile</h1>
+  <div *ngIf="profile">
+    <div class="form-group">
+      <label for="username">Username</label>
+      <input type="text" id="username" [value]="profile.username" readonly>
+    </div>
+    <div class="form-group">
+      <label for="bio">Bio</label>
+      <textarea id="bio" [(ngModel)]="profile.bio"></textarea>
+    </div>
+    <button (click)="saveProfile()">Save Profile</button>
+  </div>
+</div>

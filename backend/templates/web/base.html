@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Daily Groups{% endblock %}</title>
+  {% load static %}
+  <link rel="stylesheet" href="/app/styles.css" />
+  <link rel="stylesheet" href="{% static 'web/style.css' %}" />
+  <style>
+    /* Minimal tweaks to integrate with site styles */
+    .container { max-width: 980px; margin: 20px auto; padding: 0 16px; }
+    nav a { margin-right: 12px; }
+    .errorlist { color: #ff7b7b; margin: 0 0 8px; }
+    form .row { display: flex; gap: 10px; align-items: center; }
+  </style>
+  {% block head %}{% endblock %}
+  {% csrf_token %}
+  {% if messages %}
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      {% for m in messages %}
+      try { alert({{ m|safe|escapejs }}); } catch {}
+      {% endfor %}
+    });
+  </script>
+  {% endif %}
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark">DG</span>
+      <span class="brand-name">Daily Groups</span>
+    </div>
+    <nav class="nav-tabs" role="tablist">
+      <a href="/" class="nav-tab{% if request.path == '/' %} is-active{% endif %}">Home</a>
+      <a href="{% url 'group_list' %}" class="nav-tab{% if request.path|slice:':8' == '/groups/' %} is-active{% endif %}">Groups</a>
+      <a href="{% url 'post_list' %}" class="nav-tab{% if request.path|slice:':7' == '/posts/' %} is-active{% endif %}">Posts</a>
+      <a href="/app/#groups" class="nav-tab">App</a>
+      <a href="{% url 'reports' %}" class="nav-tab{% if request.path|slice:':9' == '/reports/' %} is-active{% endif %}">Reports</a>
+      <a href="{% url 'help' %}" class="nav-tab{% if request.path|slice:':6' == '/help/' %} is-active{% endif %}">Help</a>
+    </nav>
+    <div class="header-actions">
+      {% if request.user.is_authenticated %}
+      <span class="avatar">{{ request.user.get_username|slice:':2'|upper }}</span>
+      <a class="ghost-btn" href="{% url 'profile' %}">Profile</a>
+      <form method="post" action="{% url 'logout' %}" style="display:inline;">
+          {% csrf_token %}
+          <button type="submit" class="logout-link">Logout</button>
+      </form>
+      {% else %}
+      <a class="ghost-btn" href="{% url 'login' %}">Login</a>
+      <a class="ghost-btn" href="{% url 'register' %}">Register</a>
+      {% endif %}
+    </div>
+  </header>
+  <main class="app-main">
+    <div class="container">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+  <footer class="app-footer">
+    <div>Local development instance</div>
+  </footer>
+</body>
+</html>

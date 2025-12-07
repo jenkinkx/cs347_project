@@ -1,0 +1,12 @@
+{% extends "web/base.html" %}
+{% block title %}Home · Daily Groups{% endblock %}
+{% block content %}
+  <h1>Welcome to Daily Groups</h1>
+  <p>This is the server-rendered landing page for the coursework claims (CRUD, auth, reports, etc.).</p>
+  <p><a class="btn" href="/app/#groups">Open the App UI</a> <span class="muted">(two‑pane groups layout)</span></p>
+  {% if not request.user.is_authenticated %}
+  <p><a class="primary-btn" href="{% url 'login' %}">Sign in</a> or <a class="ghost-btn" href="{% url 'register' %}">Create an account</a></p>
+  {% else %}
+  <p><a class="primary-btn" href="{% url 'group_list' %}">View Groups</a></p>
+  {% endif %}
+{% endblock %}

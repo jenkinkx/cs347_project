@@ -114,7 +114,7 @@
           </div>
           <div class="row" style="justify-content:flex-end; gap:8px;">
             <button class="ghost-btn" data-close>Close</button>
-            <button class="primary-btn" id="logoutBtn">Sign out</button>
+            <button class="logout-btn" id="logoutBtn">Sign out</button>
           </div>
         </div>
       ` : `
@@ -203,9 +203,10 @@
           try { await postJSON('/auth/logout/', {}); } catch { }
           currentUser = { id: 'anon', name: 'Guest', initials: 'GU' };
           groups = [];
+          selectedGroupId = null;
           refreshAvatar();
           closeModal();
-          if (routeFromHash() !== 'home') location.hash = '#home';
+          if (routeFromHash() !== 'groups') location.hash = '#groups';
           render();
         });
       }
@@ -217,7 +218,7 @@
   }
 
   function saveState() {
-    localStorage.setItem('dg_state', JSON.stringify({ groups, currentUser }));
+    localStorage.setItem('dg_state', JSON.stringify({ groups, currentUser, selectedGroupId }));
   }
   function loadState() {
     const raw = localStorage.getItem('dg_state');
@@ -281,9 +282,19 @@
     return data;
   }
 
+  async function fetchComments(postId) {
+    const res = await getJSON(`/posts/${postId}/comments/`);
+    return res?.results || [];
+  }
+
+  async function createComment(postId, text, parentId = null) {
+    return postJSON(`/posts/${postId}/comments/`, { text, parent_id: parentId });
+  }
+
   // --- State (loaded from backend) ---------------------------------------
   let currentUser = { id: 'anon', name: 'Guest', initials: 'GU' };
   let groups = [];
+  let selectedGroupId = null;
 
   async function initAuth() {
     try {
@@ -297,26 +308,57 @@
   async function loadGroups() {
     const resp = await getJSON('/groups/');
     const apiGroups = resp?.results || [];
-    groups = apiGroups.map((g, idx) => ({
-      id: g.id,
-      name: g.name,
-      color: g.color || '#6b9bff',
-      description: g.description || '',
-      members: [],
-      posts: [],
-      expanded: idx === 0, // first group open
-    }));
+    groups = apiGroups.map((g, idx) => {
+      const memberNames = Array.isArray(g.member_usernames) ? g.member_usernames : [];
+      const memberDetails = Array.isArray(g.member_details) ? g.member_details : [];
+      const membersFromIds = Array.isArray(g.members)
+        ? g.members.map((id) => {
+          const detail = memberDetails.find((m) => String(m.id) === String(id));
+          return { id: String(id), name: detail?.name || detail?.username || 'Member' };
+        })
+        : [];
+      const members = membersFromIds.length
+        ? membersFromIds
+        : memberDetails.length
+          ? memberDetails.map((m) => ({ id: String(m.id), name: m.name || m.username || 'Member' }))
+          : memberNames.map((n) => ({ id: n, name: n }));
+      const parsedCount = Number(g.member_count);
+      const memberCount = Number.isFinite(parsedCount)
+        ? parsedCount
+        : (Array.isArray(g.members) ? g.members.length : memberNames.length);
+      return {
+        id: g.id,
+        name: g.name,
+        color: g.color || '#6b9bff',
+        description: g.description || '',
+        cover: g.cover_url || '',
+        members,
+        memberNames,
+        memberCount,
+        isPrivate: !g.is_public,
+        isCreator: Boolean(g.is_creator),
+        isMember: g.is_member !== false,
+        posts: [],
+        expanded: idx === 0,
+      };
+    });
+    if (!selectedGroupId && groups.length) {
+      selectedGroupId = groups[0].id;
+    }
     // Load posts for each group
     await Promise.all(groups.map(async (g) => {
       try {
         const res = await getJSON(`/posts/?group_id=${encodeURIComponent(g.id)}`);
         g.posts = (res?.results || []).map((p) => ({
           id: p.id,
-          userId: null,
-          userName: p.user_name || 'Unknown',
+          userId: p.author_id ? String(p.author_id) : (p.author || p.user_name || 'unknown'),
+          userName: p.user_name || p.author || 'Unknown',
           imageUrl: p.image_url || svgPlaceholder('IMG'),
           caption: p.caption || '',
           date: p.date || todayISO(),
+          comments: Array.isArray(p.comments) ? p.comments : [],
+          commentCount: Number(p.comment_count || (p.comments?.length || 0)),
+          latestComment: Array.isArray(p.comments) && p.comments.length ? p.comments[0].text : '',
         }));
       } catch (e) {
         g.posts = [];
@@ -326,7 +368,7 @@
 
   // --- Simple router -------------------------------------------------------
   function routeFromHash() {
-    return location.hash.replace('#', '') || 'home';
+    return location.hash.replace('#', '') || 'groups';
   }
   function setActiveTab(route) {
     $$('.nav-tab').forEach((a) => a.classList.toggle('is-active', a.dataset.route === route));
@@ -337,13 +379,12 @@
   function render() {
     const route = routeFromHash();
     setActiveTab(route);
-    if (route === 'home') renderHome();
-    else if (route === 'groups') renderGroups();
+    if (route === 'groups') renderGroups();
     else if (route === 'user') renderUser();
-    else renderHome();
+    else renderGroups();
   }
 
-  // Home View ---------------------------------------------------------------
+  // Home View (legacy) ------------------------------------------------------
   function renderHome() {
     const app = document.getElementById('app');
     const container = document.createElement('div');
@@ -364,33 +405,156 @@
     container.innerHTML = `
       <div class="search-row">
         <input id="homeSearch" class="search-input" placeholder="Search your groups..." />
-        <button id="addGroupBtn" class="primary-btn">+ New Group</button>
+        <div class="row" style="gap:8px; justify-content:flex-end;">
+          <button id="homeJoinBtn" class="ghost-btn">Join Group</button>
+          <button id="addGroupBtn" class="primary-btn">+ New Group</button>
+        </div>
       </div>
       <div id="groupList"></div>
     `;
     app.replaceChildren(container);
     $('#addGroupBtn').addEventListener('click', () => openGroupEditor());
+    $('#homeJoinBtn').addEventListener('click', () => openJoinGroupDialog());
     const list = $('#groupList');
     const q = $('#homeSearch');
     function paint() {
-      list.replaceChildren(...groups
-        .filter(g => g.name.toLowerCase().includes(q.value.trim().toLowerCase()))
-        .map(renderGroupCard));
+      const term = q.value.trim().toLowerCase();
+      const filtered = groups.filter(g => g.name.toLowerCase().includes(term));
+      if (!filtered.length) {
+        list.innerHTML = `
+          <section class="group-card" style="text-align:center; padding:24px;">
+            <div class="muted" style="margin-bottom:12px;">You haven't joined any groups yet.</div>
+            <button class="primary-btn" id="emptyJoinBtn">Find a Group to Join</button>
+          </section>
+        `;
+        const emptyBtn = $('#emptyJoinBtn');
+        if (emptyBtn) emptyBtn.addEventListener('click', () => openJoinGroupDialog());
+        return;
+      }
+      list.replaceChildren(...filtered.map(renderGroupCard));
     }
     q.addEventListener('input', paint);
     paint();
   }
 
+  // Home View (new) ---------------------------------------------------------
+  function renderHomeV2() {
+    const app = document.getElementById('app');
+    const container = document.createElement('div');
+    if (!currentUser || currentUser.id === 'anon') {
+      container.innerHTML = `
+        <div class="row" style="justify-content:space-between; margin-bottom:12px;">
+          <h2 style="margin:0">Welcome</h2>
+        </div>
+        <div class="group-card" style="text-align:center; padding:24px;">
+          <div style="font-size:18px; margin-bottom:10px">Sign in to view and post to your groups.</div>
+          <button class="primary-btn" id="homeSignIn">Sign In / Create Account</button>
+        </div>
+      `;
+      app.replaceChildren(container);
+      $('#homeSignIn').addEventListener('click', openAuthModal);
+      return;
+    }
+    container.innerHTML = `
+      <div class="home-layout">
+        <aside class="side-list">
+          <div class="search-row" style="margin-bottom:10px;">
+            <input id="homeSearch" class="search-input" placeholder="Search groups..." />
+            <button id="addGroupBtn" class="primary-btn">+ New</button>
+          </div>
+          <div id="groupSideList"></div>
+        </aside>
+        <section id="groupDetail" class="detail-pane"></section>
+      </div>
+    `;
+    app.replaceChildren(container);
+    $('#addGroupBtn').addEventListener('click', () => openGroupEditor());
+
+    const q = $('#homeSearch');
+    const side = $('#groupSideList');
+    function renderSide() {
+      const term = (q.value || '').trim().toLowerCase();
+      side.replaceChildren(...groups
+        .filter(g => g.name.toLowerCase().includes(term))
+        .map(g => {
+          const el = document.createElement('button');
+          el.className = `side-item ${String(g.id) === String(selectedGroupId) ? 'selected' : ''}`;
+          const postedToday = (g.posts || []).some(p => (p.userId === currentUser.id || p.userName === (currentUser.name||'')) && p.date === todayISO());
+          el.innerHTML = `
+            <span class="group-dot" style="background:${g.color}"></span>
+            <div class="side-meta">
+              <div class="name">${g.name}</div>
+              <div class="muted small">${(Array.isArray(g.members) ? g.members.length : (Array.isArray(g.memberNames) ? g.memberNames.length : 0))} members • ${postedToday ? 'Posted today ✅' : 'Post today required'}</div>
+            </div>`;
+          el.addEventListener('click', () => { selectedGroupId = g.id; saveState(); renderGroupDetail(); renderSide(); });
+          return el;
+        }));
+    }
+    function renderGroupDetail() {
+      const pane = $('#groupDetail');
+      const g = groups.find(x => String(x.id) === String(selectedGroupId)) || groups[0];
+      if (!g) { pane.innerHTML = '<div class="muted">No groups yet. Create one to get started.</div>'; return; }
+      const uniqueUsers = g.memberNames && g.memberNames.length ? g.memberNames : Array.from(new Set((g.posts||[]).map(p => p.userName).filter(Boolean)));
+      const photos = (g.posts || []);
+      const me = (currentUser && currentUser.name) || '';
+      const postedToday = (g.posts || []).some(p => (p && (p.userId === currentUser.id || p.userName === me) && p.date === todayISO()));
+      pane.innerHTML = `
+        <div class="group-card">
+          ${g.cover ? `<div class="cover-banner"><img src="${g.cover}" alt="${g.name} cover" /></div>` : ''}
+          <div class="group-hero">
+            <div class="row" style="gap:12px; align-items:center;">
+              <span class="group-dot" style="width:18px; height:18px; background:${g.color}"></span>
+              <h2 class="group-title" style="margin:0; font-size:22px;">${g.name}</h2>
+            </div>
+            <div class="row" style="gap:8px;">
+              <span class="chip">${(Array.isArray(g.members) ? g.members.length : (Array.isArray(g.memberNames) ? g.memberNames.length : 0))} member${((Array.isArray(g.members) ? g.members.length : (Array.isArray(g.memberNames) ? g.memberNames.length : 0)) === 1) ? '' : 's'}</span>
+              ${uniqueUsers.slice(0,6).map(n => `<span class="chip">${n}</span>`).join('')}
+            </div>
+            <div class="muted">${g.description || 'No description'}</div>
+            <div class="row" style="gap:8px;">
+              <button class="primary-btn" id="addPhotoBtn">+ Add Photo</button>
+              <a class="ghost-btn" href="/groups/${g.id}/invite/" target="_blank">Invite</a>
+            </div>
+          </div>
+          <div class="group-content">
+            ${postedToday
+              ? (photos.length ? `<div class="post-grid">${photos.map(renderPostCardHTML).join('')}</div>` : `<div class="muted" style="padding:12px;">No photos yet. Be the first to post!</div>`)
+              : `<div class="group-card" style="text-align:center; padding:14px; background: rgba(255,255,255,.03); border-radius: 12px;">
+                   <div style="font-weight:600;">Feed locked</div>
+                   <div class="muted">Post a photo today to view others' posts.</div>
+                   <div class="row" style="justify-content:center; margin-top:8px;">
+                     <button class="primary-btn" id="unlockBtn">Post Now</button>
+                   </div>
+                 </div>`}
+          </div>
+        </div>
+      `;
+      const addBtn = $('#addPhotoBtn', pane);
+      if (addBtn) addBtn.addEventListener('click', () => openAddPostDialog(g.id));
+      const unlock = $('#unlockBtn', pane);
+      if (unlock) unlock.addEventListener('click', () => openAddPostDialog(g.id));
+      $$('.post-card', pane).forEach((el) => attachPostHandlers(el, g.id));
+    }
+    q.addEventListener('input', () => { renderSide(); });
+    renderSide();
+    renderGroupDetail();
+  }
+
   function renderGroupCard(group) {
     const meName = (currentUser && currentUser.name) || '';
     const postedByMeToday = (group.posts || []).some(p => (p && (p.userId === currentUser.id || p.userName === meName)) && p.date === todayISO());
+    const visibleMembers = (group.members || []).slice(0, 6);
+    const memberCount = group.memberCount ?? group.members.length;
+    const remainingMembers = Math.max(0, memberCount - visibleMembers.length);
     const card = document.createElement('section');
     card.className = 'group-card';
     card.innerHTML = `
+      ${group.cover ? `<div class="cover-thumb"><img src="${group.cover}" alt="${group.name} cover" /></div>` : ''}
       <div class="group-header">
         <span class="group-dot" style="background:${group.color}"></span>
         <div class="row" style="gap:12px">
           <div class="group-title">${group.name}</div>
+          ${group.isPrivate ? '<span class="chip chip-private">Private</span>' : ''}
           <div class="group-date">${fmtDate(new Date())}</div>
           <div class="post-today ${postedByMeToday ? 'is-done' : ''}">
             <span class="dot"></span>
@@ -398,7 +562,7 @@
           </div>
         </div>
         <div class="group-actions">
-          <button class="ghost-btn" aria-label="Leaderboard" title="Leaderboard" data-leaderboard>🏆</button>
+          <button class="ghost-btn" aria-label="Leaderboard" title="Leaderboard" data-leaderboard>🏆 Leaderboard</button>
           <button class="expand-btn" aria-label="Toggle details">${group.expanded ? 'Collapse' : 'Expand'}</button>
           <button class="plus-btn" title="Add post" aria-label="Add post"></button>
         </div>
@@ -411,8 +575,10 @@
           <div><strong>Description:</strong> ${group.description || '<span class="muted">No description</span>'}</div>
           <div>
             <strong>Members:</strong>
-            ${group.members.map(m => `<span class='chip'>${m.name}</span>`).join(' ')}
+            ${visibleMembers.length ? visibleMembers.map(m => `<span class='chip'>${m.name}</span>`).join(' ') : '<span class="muted">No members yet</span>'}
+            ${remainingMembers > 0 ? `<span class='chip'>+${remainingMembers} more</span>` : ''}
           </div>
+          ${group.isPrivate ? '<div><span class="chip chip-private">Private group — hidden from search</span></div>' : ''}
         </div>
       </div>
     `;
@@ -441,6 +607,7 @@
   function renderPostCardHTML(post) {
     if (!post) return '';
     const isMe = (post.userId === currentUser.id) || (post.userName === (currentUser.name || ''));
+    const commentBlurb = post.latestComment ? post.latestComment : (post.commentCount ? 'View comments' : '');
     return `
       <article class="post-card" data-post-id="${post.id}">
         <img class="post-thumb" src="${post.imageUrl}" alt="Post by ${post.userName}" />
@@ -448,6 +615,7 @@
           <span class="${isMe ? 'me' : ''}">${post.userName}</span>
           <button class="icon" title="Open">🔍</button>
         </div>
+        ${post.commentCount ? `<div class="comment-preview">💬 ${post.commentCount} • ${commentBlurb}</div>` : ''}
       </article>
     `;
   }
@@ -472,13 +640,95 @@
   }
 
   // Groups View -------------------------------------------------------------
+  function openJoinGroupDialog() {
+    if (!currentUser || currentUser.id === 'anon') { openAuthModal(); return; }
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <label>Search Public Groups
+        <input id="joinSearch" class="search-input" placeholder="Type at least 2 characters..." />
+      </label>
+      <div id="joinResults" class="join-results muted">Start typing to explore public groups.</div>
+    `;
+    let searchTimer = null;
+
+    async function performSearch(query) {
+      const panel = $('#joinResults', wrap);
+      if (!panel) return;
+      const q = (query || '').trim();
+      if (q.length < 2) {
+        panel.innerHTML = `<div class="muted">Type at least 2 characters to search.</div>`;
+        return;
+      }
+      panel.innerHTML = `<div class="muted">Searching&hellip;</div>`;
+      try {
+        const res = await getJSON(`/groups/?discover=1&q=${encodeURIComponent(q)}`);
+        const results = res?.results || [];
+        if (!results.length) {
+          panel.innerHTML = `<div class="muted">No public groups found.</div>`;
+          return;
+        }
+        panel.innerHTML = results.map((g) => `
+          <article class="join-card">
+            <div class="join-card__meta">
+              <div class="row" style="gap:8px; align-items:center;">
+                <span class="group-dot" style="background:${g.color || '#6b9bff'}"></span>
+                <strong>${g.name}</strong>
+                ${g.is_private ? '<span class="chip chip-private">Private</span>' : ''}
+              </div>
+              <div class="muted" style="font-size:13px;">${(g.member_count || 0)} member${g.member_count === 1 ? '' : 's'}</div>
+            </div>
+            <div class="join-card__desc">${g.description || '<span class="muted">No description</span>'}</div>
+            <div class="row" style="justify-content:flex-end;">
+              <button class="primary-btn" data-join="${g.id}" ${g.is_private ? 'disabled' : ''}>${g.is_private ? 'Private' : 'Join'}</button>
+            </div>
+          </article>
+        `).join('');
+        $$('[data-join]', panel).forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const groupId = btn.dataset.join;
+            if (!groupId) return;
+            const original = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Joining...';
+            try {
+              await postJSON(`/groups/${groupId}/join/`, {});
+              await loadGroups();
+              saveState();
+              closeModal();
+              render();
+            } catch (e) {
+              alert(e?.data?.detail || e.message || 'Unable to join group');
+              btn.disabled = false;
+              btn.textContent = original;
+            }
+          });
+        });
+      } catch (e) {
+        panel.innerHTML = `<div class="muted">Search failed. Please try again.</div>`;
+      }
+    }
+
+    openModal('Join Group', wrap, {
+      onOpen() {
+        const input = $('#joinSearch', wrap);
+        if (input) {
+          input.addEventListener('input', () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => performSearch(input.value), 300);
+          });
+          input.focus();
+        }
+      }
+    });
+  }
+
   function renderGroups() {
     const app = document.getElementById('app');
     const container = document.createElement('div');
     if (!currentUser || currentUser.id === 'anon') {
       container.innerHTML = `
         <div class="row" style="justify-content:space-between; margin-bottom:12px;">
-          <h2 style="margin:0">Your Groups</h2>
+          <h2 style="margin:0">Groups</h2>
         </div>
         <div class="group-card" style="text-align:center; padding:24px;">
           <div class="muted" style="font-size:16px; margin-bottom:10px">Please sign in to view your groups.</div>
@@ -489,44 +739,99 @@
       return;
     }
     container.innerHTML = `
-      <div class="row" style="justify-content:space-between; margin-bottom:12px;">
-        <h2 style="margin:0">Your Groups</h2>
-        <button class="primary-btn" id="createGroupBtn">+ Create Group</button>
+      <div class="home-layout">
+        <aside class="side-list">
+          <div class="search-row" style="margin-bottom:10px;">
+            <input id="groupSearch" class="search-input" placeholder="Search groups..." />
+            <button id="createGroupBtn" class="primary-btn">+ New</button>
+          </div>
+          <div id="groupSideList"></div>
+        </aside>
+        <section id="groupDetail" class="detail-pane"></section>
       </div>
-      <div class="grid cols-3" id="groupGrid"></div>
     `;
     app.replaceChildren(container);
     $('#createGroupBtn').addEventListener('click', () => openGroupEditor());
+    const joinBtn = $('#joinGroupBtn');
+    if (joinBtn) joinBtn.addEventListener('click', () => openJoinGroupDialog());
 
-    const grid = $('#groupGrid');
-    groups.forEach(g => {
-      const postedToday = (g.posts || []).some(p => (p.userId === currentUser.id || p.userName === (currentUser.name || '')) && p.date === todayISO());
-      const tile = document.createElement('div');
-      tile.className = 'group-tile';
-      tile.innerHTML = `
-        <div class="tile-head">
-          <span class="group-dot" style="background:${g.color}"></span>
-          <div>
-            <div style="font-weight:600">${g.name}</div>
-            <div class="muted" style="font-size:13px">${g.members.length} members • ${postedToday ? 'Posted today ✅' : 'Post today required'}</div>
+    const q = $('#groupSearch');
+    const side = $('#groupSideList');
+    function renderSide() {
+      const term = (q.value || '').trim().toLowerCase();
+      side.replaceChildren(...groups
+        .filter(g => g.name.toLowerCase().includes(term))
+        .map(g => {
+          const el = document.createElement('button');
+          el.className = `side-item ${String(g.id) === String(selectedGroupId) ? 'selected' : ''}`;
+          const postedToday = (g.posts || []).some(p => (p.userId === currentUser.id || p.userName === (currentUser.name||'')) && p.date === todayISO());
+          el.innerHTML = `
+            ${g.cover ? `<span class="cover-thumb"><img src="${g.cover}" alt="${g.name} cover"></span>` : `<span class="group-dot" style="background:${g.color}"></span>`}
+            <div class="side-meta">
+              <div class="name">${g.name}</div>
+              <div class="muted small">${Array.isArray(g.members) ? g.members.length : 0} members • ${postedToday ? 'Posted today ✅' : 'Post today required'}</div>
+            </div>`;
+          el.addEventListener('click', () => { selectedGroupId = g.id; saveState(); renderGroupDetail(); renderSide(); });
+          return el;
+        }));
+    }
+    function renderGroupDetail() {
+      const pane = $('#groupDetail');
+      const g = groups.find(x => String(x.id) === String(selectedGroupId)) || groups[0];
+      if (!g) { pane.innerHTML = '<div class="muted">No groups yet. Create one to get started.</div>'; return; }
+      const uniqueUsers = Array.from(new Set((g.posts||[]).map(p => p.userName).filter(Boolean)));
+      const photos = (g.posts || []);
+      pane.innerHTML = `
+        <div class="group-card">
+          ${g.cover ? `<div class="cover-banner"><img src="${g.cover}" alt="${g.name} cover" /></div>` : ''}
+          <div class="group-hero">
+            <div class="row" style="gap:12px; align-items:center;">
+              <span class="group-dot" style="width:18px; height:18px; background:${g.color}"></span>
+              <h2 class="group-title" style="margin:0; font-size:22px;">${g.name}</h2>
+            </div>
+            <div class="row" style="gap:8px;">
+              <span class="chip">${(Array.isArray(g.members) ? g.members.length : (Array.isArray(g.memberNames) ? g.memberNames.length : 0))} member${((Array.isArray(g.members) ? g.members.length : (Array.isArray(g.memberNames) ? g.memberNames.length : 0)) === 1) ? '' : 's'}</span>
+              ${uniqueUsers.slice(0,6).map(n => `<span class="chip">${n}</span>`).join('')}
+            </div>
+            <div class="muted">${g.description || 'No description'}</div>
+            <div class="row" style="gap:8px;">
+              <button class="primary-btn" id="addPhotoBtn">+ Add Photo</button>
+              <button class="ghost-btn" data-act="lb">🏆 Leaderboard</button>
+            </div>
           </div>
-          <div class="tile-actions">
-            <button class="ghost-btn" data-act="open">Open</button>
-            <button class="ghost-btn" data-act="edit">Edit</button>
-            <button class="ghost-btn" data-act="lb">🏆</button>
+          <div class="group-content">
+            ${photos.length ? `<div class="post-grid">${photos.map(renderPostCardHTML).join('')}</div>` : `<div class="muted" style="padding:12px;">No photos yet. Be the first to post!</div>`}
           </div>
         </div>
-        <div class="muted">${g.description || ''}</div>
       `;
-      tile.querySelector('[data-act="open"]').addEventListener('click', () => {
-        location.hash = '#home'; requestAnimationFrame(() => {
-          g.expanded = true; saveState(); render();
-        });
-      });
-      tile.querySelector('[data-act="edit"]').addEventListener('click', () => openGroupEditor(g));
-      tile.querySelector('[data-act="lb"]').addEventListener('click', () => openLeaderboardModal(g, 'weekly'));
-      grid.appendChild(tile);
-    });
+      const addPhoto = $('#addPhotoBtn', pane);
+      if (addPhoto) addPhoto.addEventListener('click', () => openAddPostDialog(g.id));
+      const lbBtn = $('[data-act="lb"]', pane);
+      if (lbBtn) lbBtn.addEventListener('click', () => openLeaderboardModal(g, 'weekly'));
+      $$('.post-card', pane).forEach((el) => attachPostHandlers(el, g.id));
+    }
+    if (!groups.length) {
+      const detail = $('#groupDetail');
+      if (detail) {
+        detail.innerHTML = `
+          <section class="group-card" style="text-align:center; padding:32px;">
+            <div class="muted" style="margin-bottom:12px;">No groups yet.</div>
+            <div class="row" style="gap:8px; justify-content:center;">
+              <button class="primary-btn" id="groupsJoinCta">Join Group</button>
+              <button class="ghost-btn" id="groupsCreateCta">Create Group</button>
+            </div>
+          </section>
+        `;
+        $('#groupsJoinCta').addEventListener('click', () => openJoinGroupDialog());
+        $('#groupsCreateCta').addEventListener('click', () => openGroupEditor());
+      }
+      return;
+    }
+    q.addEventListener('input', () => { renderSide(); });
+    // Ensure we have a selection by default
+    if (!selectedGroupId && groups.length) selectedGroupId = groups[0].id;
+    renderSide();
+    renderGroupDetail();
   }
 
   // User View ---------------------------------------------------------------
@@ -566,7 +871,7 @@
       el.className = 'group-tile';
       el.innerHTML = `
         <div class="tile-head">
-          <span class="group-dot" style="background:${g.color}"></span>
+          ${g.cover ? `<span class="cover-thumb" style="width:40px; height:40px;"><img src="${g.cover}" alt="${g.name} cover" /></span>` : `<span class="group-dot" style="background:${g.color}"></span>`}
           <div>
             <div style="font-weight:600">${g.name}</div>
             <div class="muted" style="font-size:13px">${g.members.length} members</div>
@@ -576,7 +881,7 @@
           </div>
         </div>
       `;
-      el.querySelector('[data-act="open"]').addEventListener('click', () => { location.hash = '#home'; requestAnimationFrame(render); });
+      el.querySelector('[data-act="open"]').addEventListener('click', () => { location.hash = '#groups'; requestAnimationFrame(() => { selectedGroupId = g.id; saveState(); render(); }); });
       list.appendChild(el);
     });
   }
@@ -722,10 +1027,159 @@
       </div>
       <div><strong>${post.userName}</strong></div>
       <div class="muted">${post.caption || ''}</div>
+      <div class="comments">
+        <div class="row" style="justify-content:space-between;">
+          <strong>Comments</strong>
+          <span class="muted" id="commentCount"></span>
+        </div>
+        <div id="commentList" class="comment-list muted">Loading comments...</div>
+        <div id="replyMeta" class="muted hidden" style="font-size:12px; gap:6px; align-items:center;"></div>
+        ${currentUser && currentUser.id !== 'anon' ? `
+          <div class="row" style="gap:8px;">
+            <input id="commentInput" class="search-input" placeholder="Add a comment..." />
+            <button class="primary-btn" id="commentSubmit">Post</button>
+          </div>
+        ` : `<div class="muted">Sign in to add a comment.</div>`}
+      </div>
     `;
     openModal('Post', wrap, {
       onOpen(root) {
         if ($('#editBtn', wrap)) $('#editBtn', wrap).addEventListener('click', () => { closeModal(); openEditPostModal(post, group); });
+        const listEl = $('#commentList', wrap);
+        const countEl = $('#commentCount', wrap);
+        const replyMeta = $('#replyMeta', wrap);
+        let commentTree = Array.isArray(post.comments) ? post.comments : [];
+        let replyTo = null;
+
+        function renderComments(list) {
+          if (!listEl) return;
+          if (!list || !list.length) {
+            listEl.innerHTML = '<div class="muted">No comments yet.</div>';
+            if (countEl) countEl.textContent = '';
+            return;
+          }
+          listEl.classList.remove('muted');
+
+          function renderTree(nodes, level = 0) {
+            return nodes.map(c => {
+              const replies = Array.isArray(c.replies) && c.replies.length ? renderTree(c.replies, level + 1) : '';
+              return `
+                <div class="comment" data-id="${c.id}" style="margin-left:${level * 12}px;">
+                  <div class="row" style="justify-content:space-between;">
+                    <strong>${c.user_name || 'User'}</strong>
+                    <span class="muted" style="font-size:12px;">${fmtDate(new Date(c.created_at))}</span>
+                  </div>
+                  <div>${c.text}</div>
+                  <div class="row" style="justify-content:flex-end; gap:6px;">
+                    <button class="ghost-btn" data-reply="${c.id}" style="padding:4px 6px; font-size:12px;">Reply</button>
+                  </div>
+                </div>
+                ${replies}
+              `;
+            }).join('');
+          }
+
+          listEl.innerHTML = renderTree(list);
+          function countNodes(nodes) {
+            return nodes.reduce((acc, n) => acc + 1 + (Array.isArray(n.replies) ? countNodes(n.replies) : 0), 0);
+          }
+          const totalCount = countNodes(list);
+          if (countEl) countEl.textContent = `${totalCount} comment${totalCount === 1 ? '' : 's'}`;
+
+          $$('[data-reply]', listEl).forEach(btn => {
+            btn.addEventListener('click', () => {
+              replyTo = btn.dataset.reply;
+              const target = findCommentById(commentTree, replyTo);
+              if (replyMeta) {
+                replyMeta.classList.remove('hidden');
+                replyMeta.innerHTML = `
+                  <span>Replying to <strong>${target?.user_name || 'comment'}</strong></span>
+                  <button class="ghost-btn" id="clearReply" style="padding:4px 6px; font-size:12px;">Cancel</button>
+                `;
+                $('#clearReply', replyMeta)?.addEventListener('click', () => clearReply());
+              }
+              const input = $('#commentInput', wrap);
+              if (input) input.focus();
+            });
+          });
+        }
+
+        function clearReply() {
+          replyTo = null;
+          if (replyMeta) {
+            replyMeta.classList.add('hidden');
+            replyMeta.innerHTML = '';
+          }
+        }
+
+        function findCommentById(nodes, id) {
+          for (const c of nodes || []) {
+            if (String(c.id) === String(id)) return c;
+            const found = findCommentById(c.replies || [], id);
+            if (found) return found;
+          }
+          return null;
+        }
+
+        function insertComment(tree, parentId, newComment) {
+          if (!parentId) {
+            tree.unshift(newComment);
+            return true;
+          }
+          for (const c of tree) {
+            if (String(c.id) === String(parentId)) {
+              c.replies = c.replies || [];
+              c.replies.unshift(newComment);
+              return true;
+            }
+            if (c.replies && insertComment(c.replies, parentId, newComment)) return true;
+          }
+          return false;
+        }
+
+        async function loadComments() {
+          if (listEl) listEl.innerHTML = '<div class="muted">Loading comments...</div>';
+          try {
+            const items = await fetchComments(post.id);
+            commentTree = items;
+            post.comments = items;
+            const countNodes = (nodes) => nodes.reduce((acc, n) => acc + 1 + (Array.isArray(n.replies) ? countNodes(n.replies) : 0), 0);
+            post.commentCount = countNodes(items);
+            renderComments(items);
+          } catch (e) {
+            if (listEl) listEl.innerHTML = '<div class="muted">Unable to load comments.</div>';
+          }
+        }
+
+        loadComments();
+
+        const submit = $('#commentSubmit', wrap);
+        if (submit) {
+          submit.addEventListener('click', async () => {
+            if (!currentUser || currentUser.id === 'anon') { openAuthModal(); return; }
+            const input = $('#commentInput', wrap);
+            const text = (input?.value || '').trim();
+            if (!text) return;
+            submit.disabled = true;
+            submit.textContent = 'Posting...';
+            try {
+              const created = await createComment(post.id, text, replyTo);
+              input.value = '';
+              if (!commentTree) commentTree = [];
+              insertComment(commentTree, replyTo, { ...created, replies: [] });
+              clearReply();
+              post.comments = commentTree;
+              post.commentCount = (post.commentCount || 0) + 1;
+              if (!replyTo) post.latestComment = created.text;
+              renderComments(commentTree);
+            } catch (e) {
+              alert(e?.data?.detail || e.message || 'Failed to post comment');
+            } finally {
+              submit.disabled = false;
+              submit.textContent = 'Post';
+            }
+          });
+        }
       }
     });
   }
@@ -768,7 +1222,12 @@
   function openGroupEditor(group) {
     if (!currentUser || currentUser.id === 'anon') { openAuthModal(); return; }
     const isNew = !group;
-    const model = group ? { ...group } : { name: '', color: '#6b9bff', description: '' };
+    if (!isNew && group && !group.isCreator) {
+      alert('Only the group creator can edit this group.');
+      return;
+    }
+    const model = group ? { ...group } : { name: '', color: '#6b9bff', description: '', isPrivate: false };
+    let coverFile = null;
     const wrap = document.createElement('div');
     wrap.innerHTML = `
       <div class="grid">
@@ -781,6 +1240,11 @@
         <label>Description
           <textarea id="gDesc" class="search-input" rows="3" placeholder="What\'s this group about?">${model.description}</textarea>
         </label>
+        <label>Cover Image
+          <input id="gCover" type="file" accept="image/*" />
+          ${model.cover ? `<div class="muted" style="font-size:12px;">Current cover set</div>` : '<div class="muted" style="font-size:12px;">Optional</div>'}
+        </label>
+        
         <div class="row" style="justify-content:flex-end; gap:8px;">
           ${!isNew ? '<button class="ghost-btn" id="delete">Delete</button>' : ''}
           <button class="ghost-btn" data-close>Cancel</button>
@@ -788,47 +1252,59 @@
         </div>
       </div>
     `;
-    openModal(isNew ? 'Create Group' : 'Edit Group', wrap, {
-      onOpen() {
-        $('#save', wrap).addEventListener('click', async () => {
-          const name = ($('#gName', wrap).value || '').trim() || 'Untitled Group';
-          const color = $('#gColor', wrap).value;
-          const description = ($('#gDesc', wrap).value || '').trim();
-          try {
-            if (isNew) {
-              const created = await postJSON('/groups/', { name, color, description });
-              // Reload from backend to normalize shape and fetch posts
-              await loadGroups();
-              // Expand the newly created group on Home
-              const ng = groups.find(x => String(x.id) === String(created.id));
-              if (ng) ng.expanded = true;
-              // Navigate to Home to surface the new group
-              if (routeFromHash() !== 'home') location.hash = '#home';
-            } else {
-              const g = await patchJSON(`/groups/${group.id}/`, { name, color, description });
-              const idx = groups.findIndex(x => x.id === group.id);
-              if (idx !== -1) groups[idx] = { ...groups[idx], ...g };
+    openModal(isNew ? 'Create Group' : 'Edit Group', wrap, { onOpen(){
+      const coverInput = $('#gCover', wrap);
+      if (coverInput) coverInput.addEventListener('change', (e) => { coverFile = e.target.files?.[0] || null; });
+      $('#save', wrap).addEventListener('click', async () => {
+        const name = ($('#gName', wrap).value || '').trim() || 'Untitled Group';
+        const color = $('#gColor', wrap).value;
+        const description = ($('#gDesc', wrap).value || '').trim();
+        const isPrivate = Boolean($('#gPrivate', wrap)?.checked);
+        try {
+          if (isNew) {
+            const created = await postJSON('/groups/', { name, color, description, is_public: !isPrivate });
+            // Reload from backend to normalize shape and fetch posts
+            await loadGroups();
+            // Focus the newly created group on Home
+            selectedGroupId = created?.id || selectedGroupId;
+            saveState();
+            const ng = groups.find(x => String(x.id) === String(created.id));
+            if (coverFile && ng) {
+              const fd = new FormData();
+              fd.append('cover', coverFile);
+              try { await uploadForm(`/groups/${ng.id}/cover/`, fd); await loadGroups(); } catch {}
             }
-            saveState();
-            closeModal();
-            render();
-          } catch (e) {
-            alert(e?.data?.detail || e.message || 'Save failed');
+            if (routeFromHash() !== 'groups') location.hash = '#groups';
+          } else {
+            const g = await patchJSON(`/groups/${group.id}/`, { name, color, description, is_public: !isPrivate });
+            const idx = groups.findIndex(x => x.id === group.id);
+            if (idx !== -1) groups[idx] = { ...groups[idx], ...g, cover: g.cover_url || groups[idx].cover };
+            if (coverFile) {
+              const fd = new FormData();
+              fd.append('cover', coverFile);
+              try { await uploadForm(`/groups/${group.id}/cover/`, fd); await loadGroups(); } catch {}
+            }
           }
-        });
-        if (!isNew) $('#delete', wrap).addEventListener('click', async () => {
-          try {
-            await deleteJSON(`/groups/${group.id}/`);
-            groups = groups.filter(g => g.id !== group.id);
-            saveState();
-            closeModal();
-            render();
-          } catch (e) {
-            alert(e?.data?.detail || e.message || 'Delete failed');
-          }
-        });
-      }
-    });
+          saveState();
+          closeModal();
+          render();
+        } catch (e) {
+          alert(e?.data?.detail || e.message || 'Save failed');
+        }
+      });
+      if (!isNew) $('#delete', wrap).addEventListener('click', async () => {
+        try {
+          await deleteJSON(`/groups/${group.id}/`);
+          groups = groups.filter(g => g.id !== group.id);
+          if (!groups.length) selectedGroupId = null; else if (String(selectedGroupId) === String(group.id)) selectedGroupId = groups[0].id;
+          saveState();
+          closeModal();
+          render();
+        } catch (e) {
+          alert(e?.data?.detail || e.message || 'Delete failed');
+        }
+      });
+    }});
   }
 
   // Boot -------------------------------------------------------------------
@@ -842,7 +1318,13 @@
   if (userBtn) userBtn.addEventListener('click', openAuthModal);
 
   async function init() {
-    try { await initAuth(); } catch { }
+    try {
+      const st = loadState && loadState();
+      if (st && typeof st === 'object') {
+        selectedGroupId = st.selectedGroupId || null;
+      }
+    } catch {}
+    try { await initAuth(); } catch {}
     try {
       if (currentUser && currentUser.id !== 'anon') {
         await loadGroups();
@@ -851,8 +1333,46 @@
       }
     } catch { }
     refreshAvatar();
-    if (!location.hash) location.hash = '#home';
+    if (!location.hash) location.hash = '#groups';
+    notifyDaily();
     render();
+  }
+
+  function groupsNeedingPostToday() {
+    const me = (currentUser.name || '');
+    const today = todayISO();
+    return groups.filter(g => !((g.posts || []).some(p => p && (p.userId === currentUser.id || p.userName === me) && p.date === today)));
+  }
+
+  function notifyDaily() {
+    if (!currentUser || currentUser.id === 'anon') return;
+    const today = todayISO();
+    const key = 'dg_last_notice';
+    const last = localStorage.getItem(key);
+    const due = last !== today;
+    const missing = groupsNeedingPostToday();
+    if (missing.length && due) {
+      const bar = document.createElement('div');
+      bar.className = 'notice-bar';
+      bar.innerHTML = `
+        <div class="row" style="justify-content:space-between; align-items:center; width:100%;">
+          <div><strong>Daily reminder:</strong> You have ${missing.length} group${missing.length!==1?'s':''} to post in today.</div>
+          <div class="row" style="gap:8px;">
+            <button class="ghost-btn" id="jumpBtn">Review</button>
+            <button class="ghost-btn" id="dismissBtn" aria-label="Dismiss">Dismiss</button>
+          </div>
+        </div>`;
+      document.body.appendChild(bar);
+      $('#dismissBtn', bar).addEventListener('click', () => { bar.remove(); localStorage.setItem(key, today); });
+      $('#jumpBtn', bar).addEventListener('click', () => {
+        location.hash = '#groups';
+        selectedGroupId = missing[0]?.id || selectedGroupId;
+        saveState();
+        bar.remove();
+        localStorage.setItem(key, today);
+        render();
+      });
+    }
   }
 
   init();
@@ -912,6 +1432,3 @@
     openModal('🏆 Leaderboard', wrap);
   }
 })();
-
-
-

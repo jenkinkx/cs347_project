@@ -1,0 +1,22 @@
+{% extends "web/base.html" %}
+{% block title %}Register · Daily Groups{% endblock %}
+{% block content %}
+  <h1>Create Account</h1>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <div class="grid" style="gap:10px;">
+      <label>Username {{ form.username }}</label>
+      <div class="row" style="gap:10px;">
+        <label>First {{ form.first_name }}</label>
+        <label>Last {{ form.last_name }}</label>
+      </div>
+      <label>Password {{ form.password1 }}</label>
+      <label>Confirm {{ form.password2 }}</label>
+      <div>
+        <button type="submit" class="primary-btn">Create Account</button>
+      </div>
+    </div>
+  </form>
+{% endblock %}
+

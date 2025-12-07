@@ -1,0 +1,68 @@
+{% extends "web/base.html" %}
+{% block title %}{{ object.name }} · Daily Groups{% endblock %}
+{% block content %}
+  {% if object.cover %}
+    <div style="height:240px; border-radius:14px; overflow:hidden; margin-bottom:16px; border:1px solid #e5e5e5;">
+      <img src="{{ object.cover.url }}" alt="{{ object.name }} cover" style="width:100%; height:100%; object-fit:cover;" />
+    </div>
+  {% endif %}
+  <div class="row" style="justify-content:space-between;">
+    <h1 style="margin:0;">{{ object.name }}</h1>
+    <div class="row" style="gap:8px;">
+      <a class="ghost-btn" href="{% url 'group_edit' object.pk %}">Edit</a>
+      <a class="ghost-btn" href="{% url 'group_delete' object.pk %}">Delete</a>
+      {% if object.owner_id != request.user.id %}
+        <form id="leave-form" method="post" style="display:inline;">
+          {% csrf_token %}
+          <button type="button" class="ghost-btn" id="leave-btn">Leave</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+  <p class="muted">{{ object.description|default:"No description" }}</p>
+  <p class="muted">Timeline: {{ object.start_date|default:"—" }}{% if object.start_date or object.end_date %} → {{ object.end_date|default:"—" }}{% endif %}</p>
+  <p><a class="primary-btn" href="{% url 'post_create' %}">+ New Post</a></p>
+  <h3>Recent Posts</h3>
+  <div class="post-grid">
+    {% for p in object.posts.all|slice:":12" %}
+      <a class="post-card" href="{% url 'post_detail' p.pk %}" style="text-decoration:none;">
+        <img class="post-thumb" src="{{ p.image.url }}" alt="Post" />
+        <div class="post-meta">
+          <span class="me">{{ p.author.username }}</span>
+          <span>{{ p.date|date:"Y-m-d" }}</span>
+        </div>
+      </a>
+    {% empty %}
+      <p class="muted">No posts yet.</p>
+    {% endfor %}
+  </div>
+
+  {% if object.owner_id != request.user.id %}
+  <script>
+    (function() {
+      const btn = document.getElementById('leave-btn');
+      if (!btn) return;
+      function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+      }
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = 'Leaving...';
+        try {
+          const res = await fetch(`/api/groups/{{ object.id }}/leave/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') || '' },
+          });
+          if (!res.ok) throw new Error();
+          window.location.href = '{% url "group_list" %}';
+        } catch (e) {
+          btn.textContent = 'Try again';
+          btn.disabled = false;
+        }
+      });
+    })();
+  </script>
+  {% endif %}
+{% endblock %}

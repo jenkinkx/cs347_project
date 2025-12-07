@@ -1,0 +1,20 @@
+{% extends 'web/base.html' %}
+{% block title %}Post • {{ post.pk }}{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Post</h2>
+    {% if post.image %}
+      <img class="responsive" src="{{ post.image.url }}" alt="Post image" />
+    {% endif %}
+    <p>{{ post.caption|default:'(no caption)' }}</p>
+    <p class="muted">By {{ post.author.username }}{% if post.group %} in <a href="{% url 'group_detail' post.group.pk %}">{{ post.group.name }}</a>{% endif %}</p>
+    <p>
+      {% if request.user == post.author or request.user.is_superuser %}
+        <a class="btn" href="{% url 'post_edit' post.pk %}">Edit</a>
+        <a class="btn danger" href="{% url 'post_delete' post.pk %}">Delete</a>
+      {% endif %}
+      <a class="btn secondary" href="{% url 'post_list' %}">Back</a>
+    </p>
+  </div>
+{% endblock %}
+

@@ -1,0 +1,39 @@
+{% extends 'web/base.html' %}
+{% block title %}Home • Daily Groups{% endblock %}
+{% block content %}
+  <div class="grid cols-2">
+    <div>
+      <div class="card">
+        <h2>Welcome</h2>
+        <p class="muted">Server-rendered Django pages are enabled. Use the navigation to explore groups and posts. File uploads, search, pagination, profiles, import/export, and more are implemented.</p>
+      </div>
+      <div class="card">
+        <h3>Recent Posts</h3>
+        {% if posts %}
+          <ul>
+            {% for p in posts %}
+              <li><a href="{% url 'post_detail' p.pk %}">{{ p.caption|default:'(no caption)' }}</a> <span class="muted">by {{ p.author.username }}{% if p.group %} in {{ p.group.name }}{% endif %}</span></li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="muted">No posts yet.</p>
+        {% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h3>Your Groups</h3>
+        {% if groups %}
+          <ul>
+            {% for g in groups %}
+              <li><a href="{% url 'group_detail' g.pk %}">{{ g.name }}</a></li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="muted">No groups yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock %}
+

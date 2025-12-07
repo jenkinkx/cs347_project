@@ -1,0 +1,87 @@
+{% extends "web/base.html" %}
+{% block title %}Groups · Daily Groups{% endblock %}
+{% block content %}
+  <div class="row" style="justify-content:space-between;">
+    <div>
+      <h1 style="margin:0;">{% if discover_mode %}Discover Groups{% else %}My Groups{% endif %}</h1>
+      <p class="muted" style="margin:4px 0 0;">{% if discover_mode %}Browse public groups you’re not in yet.{% else %}Groups you own or have joined.{% endif %}</p>
+    </div>
+    <div class="row" style="gap:8px;">
+      <a class="ghost-btn" href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}">My groups</a>
+      <a class="ghost-btn" href="?discover=1{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}">Discover</a>
+      <a class="primary-btn" href="{% url 'group_create' %}">+ New Group</a>
+    </div>
+  </div>
+  <form method="get" class="row" style="margin:10px 0;">
+    {% if discover_mode %}<input type="hidden" name="discover" value="1" />{% endif %}
+    <input class="search-input" type="search" name="q" value="{{ request.GET.q }}" placeholder="Search groups..." />
+    <button class="ghost-btn" type="submit">Search</button>
+  </form>
+  <div class="grid cols-3">
+    {% for g in groups %}
+      <div class="group-tile" data-group-id="{{ g.id }}">
+        <div class="group-cover" style="height:120px; margin-bottom:10px; border-radius:10px; overflow:hidden; border:1px solid #e5e5e5; background: #f8f8f8;">
+          {% if g.cover %}
+            <img src="{{ g.cover.url }}" alt="{{ g.name }} cover" style="width:100%; height:100%; object-fit:cover;" />
+          {% else %}
+            <div class="row" style="height:100%; align-items:center; justify-content:center; color:#777;">No cover</div>
+          {% endif %}
+        </div>
+        <div class="tile-head" style="align-items:flex-start;">
+          <span class="group-dot" style="background: {{ g.color }}"></span>
+          <div>
+            <div style="font-weight:600">{{ g.name }}</div>
+            <div class="muted" style="font-size:13px">{{ g.description|default:"No description" }}</div>
+            <div class="muted" style="font-size:12px;">Timeline: {{ g.start_date|default:"—" }}{% if g.start_date or g.end_date %} → {{ g.end_date|default:"—" }}{% endif %}</div>
+          </div>
+          <div class="tile-actions">
+            {% if discover_mode %}
+              <button type="button" class="ghost-btn join-btn" data-id="{{ g.id }}">Join</button>
+            {% else %}
+              <a class="ghost-btn" href="{% url 'group_detail' g.pk %}">Open</a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    {% empty %}
+      <p class="muted">No groups found.</p>
+    {% endfor %}
+  </div>
+  {% if discover_mode %}
+    <script>
+      (function() {
+        function getCookie(name) {
+          const value = `; ${document.cookie}`;
+          const parts = value.split(`; ${name}=`);
+          if (parts.length === 2) return parts.pop().split(';').shift();
+        }
+        document.querySelectorAll('.join-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            btn.textContent = 'Joining...';
+            const gid = btn.dataset.id;
+            try {
+              const res = await fetch(`/api/groups/${gid}/join/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCookie('csrftoken') || '' },
+              });
+              if (!res.ok) throw new Error();
+              btn.textContent = 'Joined';
+              setTimeout(() => location.reload(), 400);
+            } catch (e) {
+              btn.textContent = 'Try again';
+              btn.disabled = false;
+            }
+          });
+        });
+      })();
+    </script>
+  {% endif %}
+  {% if is_paginated %}
+  <div class="row" style="justify-content:center; margin-top:12px;">
+    {% if page_obj.has_previous %}<a class="ghost-btn" href="?page={{ page_obj.previous_page_number }}">Prev</a>{% endif %}
+    <span class="muted" style="padding:0 8px;">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a class="ghost-btn" href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+  </div>
+  {% endif %}
+{% endblock %}

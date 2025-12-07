@@ -4,9 +4,6 @@
     <label>Group ID
       <input type="number" [(ngModel)]="groupId" placeholder="e.g. 1" />
     </label>
-    <label>Your Name
-      <input [(ngModel)]="userName" placeholder="e.g. Kendall" />
-    </label>
   </div>
   <label>Caption
     <input [(ngModel)]="caption" placeholder="Optional caption" />
@@ -20,7 +17,7 @@
 
   <div *ngIf="result" class="result">
     <div>Uploaded ID: {{ result.id }}</div>
-    <img [src]="result.image_url" alt="Uploaded" />
+    <img [src]="result.image" alt="Uploaded" />
   </div>
 </div>
 

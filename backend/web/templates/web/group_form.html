@@ -1,0 +1,38 @@
+{% extends 'web/base.html' %}
+{% block title %}Group Form{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Group</h2>
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <p>
+        <label>Name<br>{{ form.name }}</label>
+      </p>
+      <p>
+        <label>Color<br>{{ form.color }}</label>
+      </p>
+      <p>
+        <label>Description<br>{{ form.description }}</label>
+      </p>
+      <p>
+        <label>Cover Image<br>
+          <input type="file" name="cover" id="id_cover" accept="image/*">
+        </label>
+        {% if form.instance.cover %}
+          <div style="margin:6px 0;">
+            <small class="muted">Current cover:</small><br>
+            <img src="{{ form.instance.cover.url }}" alt="Current cover" style="max-width:240px; border:1px solid #e0e0e0; border-radius:8px;">
+          </div>
+        {% endif %}
+        <small class="muted">Optional — appears on the list and detail page.</small>
+      </p>
+      <p>
+        <label>{{ form.is_public }} Public (discoverable)</label>
+      </p>
+      <p>
+        <button class="btn" type="submit">Save</button>
+        <a class="btn secondary" href="{% url 'group_list' %}">Cancel</a>
+      </p>
+    </form>
+  </div>
+{% endblock %}
