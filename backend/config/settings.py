@@ -70,11 +70,16 @@ ASGI_APPLICATION = "config.asgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/stable/ref/settings/#databases
-if ENVIRONMENT == "production":
+ENVIRONMENT = os.getenv("DJANGO_ENV", "production")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
+if ENVIRONMENT == "production" and DATABASE_URL:
+    # Use Postgres (or whatever DATABASE_URL points to)
     DATABASES = {
-        "default": dj_database_url.config(default=os.getenv("DATABASE_URL", ""), conn_max_age=600)
+        "default": dj_database_url.config(default=DATABASE_URL, conn_max_age=600)
     }
 else:
+    # Safe fallback: always a real ENGINE
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
