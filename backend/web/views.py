@@ -38,11 +38,22 @@ class GroupListView(LoginRequiredMixin, ListView):
     paginate_by = 10
 
     def get_queryset(self):
-        qs = Group.objects.all().order_by("-created_at")
+        user = self.request.user
+        discover = (self.request.GET.get("discover") or "").lower() in {"1", "true", "yes"}
+        if discover:
+            qs = Group.objects.filter(is_public=True).exclude(Q(owner=user) | Q(members=user))
+        else:
+            qs = Group.objects.filter(Q(owner=user) | Q(members=user))
+        qs = qs.order_by("-created_at").distinct()
         q = (self.request.GET.get("q") or "").strip()
         if q:
-            qs = qs.filter(name__icontains=q)
+            qs = qs.filter(Q(name__icontains=q) | Q(description__icontains=q))
         return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["discover_mode"] = (self.request.GET.get("discover") or "").lower() in {"1", "true", "yes"}
+        return ctx
 
 
 class GroupDetailView(LoginRequiredMixin, DetailView):

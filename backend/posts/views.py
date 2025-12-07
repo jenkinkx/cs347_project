@@ -84,6 +84,14 @@ class GroupViewSet(viewsets.ModelViewSet):
         GroupMembership.objects.get_or_create(user=request.user, group=group, defaults={"role": "member"})
         return Response({"ok": True})
 
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
+    def leave(self, request, pk=None):
+        group = get_object_or_404(Group, pk=pk)
+        if group.owner_id == request.user.id:
+            return Response({"detail": "Owners cannot leave their own group."}, status=status.HTTP_400_BAD_REQUEST)
+        GroupMembership.objects.filter(user=request.user, group=group).delete()
+        return Response({"ok": True})
+
     def list(self, request, *args, **kwargs):
         discover = (request.query_params.get("discover") or "").lower() in {"1", "true", "yes"}
         if discover:
