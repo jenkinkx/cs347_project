@@ -1,17 +1,24 @@
 from rest_framework import generics, viewsets, status, mixins
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.filters import SearchFilter
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.authentication import SessionAuthentication
+
 from django.contrib.auth.models import User
 from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q
+from django.forms.models import model_to_dict  # if used elsewhere; otherwise safe to keep
+from django.utils.dateparse import parse_date   # same note
+from django.contrib.auth.decorators import login_required
 
+from ..storage.s3_utils import build_key, presign_upload, presign_download
+
+from .models import Group, Post, Profile, Comment, GroupMembership
 from .permissions import IsAuthorOrReadOnly
 from .serializers import (
     UserSerializer,
@@ -20,7 +27,9 @@ from .serializers import (
     ProfileSerializer,
     CommentSerializer,
 )
-from .models import Group, Post, Profile, Comment, GroupMembership
+
+import json
+import mimetypes
 
 
 class CsrfExemptSessionAuthentication(SessionAuthentication):
@@ -235,9 +244,14 @@ def upload_post(request):
     group_id = request.POST.get("group_id")
     if not image or not group_id:
         return JsonResponse({"detail": "image and group_id are required"}, status=400)
+
     group = get_object_or_404(Group, id=group_id)
-    if not (group.owner_id == request.user.id or group.members.filter(id=request.user.id).exists()):
+    if not (
+        group.owner_id == request.user.id
+        or group.members.filter(id=request.user.id).exists()
+    ):
         return JsonResponse({"detail": "Join the group to post."}, status=403)
+
     with transaction.atomic():
         post = Post.objects.create(
             group=group,
@@ -246,6 +260,7 @@ def upload_post(request):
             image=image,
             date=timezone.now().date(),
         )
+
     data = {
         "id": post.id,
         "user_name": request.user.username,
@@ -254,3 +269,134 @@ def upload_post(request):
         "image_url": request.build_absolute_uri(post.image.url) if post.image else None,
     }
     return JsonResponse(data, status=201)
+
+
+def _group_payload(g: Group) -> dict:
+    return {
+        "id": g.id,
+        "name": g.name,
+        "color": g.color,
+        "description": g.description,
+    }
+
+
+@csrf_exempt
+def group_detail(request, group_id: int):
+    """
+    GET: Fetch a group
+    PATCH/PUT/POST: Update group fields (requires auth)
+    DELETE: Delete the group (requires auth)
+    """
+    g = get_object_or_404(Group, pk=group_id)
+
+    if request.method == "GET":
+        if not request.user.is_authenticated:
+            return JsonResponse({"detail": "Authentication required"}, status=401)
+        return JsonResponse(_group_payload(g))
+
+    if request.method in {"PATCH", "PUT", "POST"}:
+        if not request.user.is_authenticated:
+            return JsonResponse({"detail": "Authentication required"}, status=401)
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except Exception:
+            return HttpResponseBadRequest("Invalid JSON")
+
+        name = payload.get("name")
+        color = payload.get("color")
+        description = payload.get("description")
+
+        if name is not None:
+            g.name = (name or "").strip() or g.name
+        if color is not None:
+            g.color = (color or "").strip() or g.color
+        if description is not None:
+            g.description = (description or "").strip()
+
+        g.save()
+        return JsonResponse(_group_payload(g))
+
+    if request.method == "DELETE":
+        if not request.user.is_authenticated:
+            return JsonResponse({"detail": "Authentication required"}, status=401)
+        g.delete()
+        return JsonResponse({"ok": True})
+
+    return JsonResponse({"detail": "Method not allowed"}, status=405)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def start_photo_upload(request):
+    """
+    Issue a presigned POST so the client can upload directly to S3.
+    Body:
+      {
+        "filename": "photo.jpg",
+        "content_type": "image/jpeg",
+        "group_id": 123  (optional; used in key prefix)
+      }
+    """
+    filename = (request.data.get("filename") or "upload.jpg").strip()
+    content_type = (
+        (request.data.get("content_type") or "").strip()
+        or mimetypes.guess_type(filename)[0]
+        or "application/octet-stream"
+    )
+    group_id = request.data.get("group_id")
+    prefix = f"groups/{group_id}" if group_id else "uploads"
+
+    key = build_key(filename, prefix=prefix)
+    upload = presign_upload(key, content_type=content_type)
+
+    return Response({"key": key, "upload": upload})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def create_post_from_s3(request):
+    """
+    Body:
+      {
+        "group_id": 123,
+        "key": "groups/123/<uuid>.jpg",
+        "caption": "optional"
+      }
+    """
+    group_id = request.data.get("group_id")
+    key = (request.data.get("key") or "").strip()
+    caption = (request.data.get("caption") or "").strip()
+
+    if not group_id or not key:
+        return Response({"detail": "group_id and key required"}, status=400)
+
+    group = get_object_or_404(Group, pk=group_id)
+
+    if hasattr(Post, "image_key"):
+        post = Post.objects.create(
+            group=group,
+            user_name=request.user.get_username(),
+            caption=caption,
+            image_key=key,
+        )
+    else:
+        post = Post.objects.create(
+            group=group,
+            user_name=request.user.get_username(),
+            caption=caption,
+        )
+
+    image_url = presign_download(key)
+
+    return Response(
+        {
+            "id": post.id,
+            "user_name": post.user_name,
+            "caption": post.caption,
+            "image_url": image_url,
+            "date": timezone.now().date().isoformat(),
+            "group_id": group.id,
+            "key": key,
+        },
+        status=201,
+    )

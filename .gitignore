@@ -26,3 +26,16 @@ dist/
 # macOS
 .DS_Store
 
+
+# Ignore heavy stuff
+node_modules/
+.dist/
+build/
+.DS_Store
+storage/
+.env
+*.venv/
+.venv/
+# allow S3 helper module
+!backend/storage/
+!backend/storage/s3_utils.py
