@@ -44,7 +44,10 @@
       {% if request.user.is_authenticated %}
       <span class="avatar">{{ request.user.get_username|slice:':2'|upper }}</span>
       <a class="ghost-btn" href="{% url 'profile' %}">Profile</a>
-      <a class="ghost-btn" href="{% url 'logout' %}">Logout</a>
+      <form method="post" action="{% url 'logout' %}" style="display:inline;">
+          {% csrf_token %}
+          <button type="submit" class="logout-link">Logout</button>
+      </form>
       {% else %}
       <a class="ghost-btn" href="{% url 'login' %}">Login</a>
       <a class="ghost-btn" href="{% url 'register' %}">Register</a>

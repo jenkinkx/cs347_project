@@ -2,13 +2,23 @@
 {% block title %}{{ view.object|default_if_none:'New Group' }} · Daily Groups{% endblock %}
 {% block content %}
   <h1>{{ view.object|default_if_none:'New Group' }}</h1>
-  <form method="post">
+  <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
     {{ form.non_field_errors }}
     <div class="grid" style="gap:10px;">
       <label>Name {{ form.name }}</label>
       <label>Color {{ form.color }}</label>
       <label>Description {{ form.description }}</label>
+      <label>Cover image {{ form.cover }}</label>
+      <label style="display:flex; align-items:center; gap:6px;">{{ form.is_public }} Public group</label>
+      <label>Start date {{ form.start_date }}</label>
+      <label>End date {{ form.end_date }}</label>
+      {% if form.instance.cover %}
+        <div class="row" style="align-items:center; gap:10px;">
+          <span class="muted">Current cover:</span>
+          <img src="{{ form.instance.cover.url }}" alt="Cover preview" style="width:160px; height:96px; object-fit:cover; border-radius:8px; border:1px solid #ddd;" />
+        </div>
+      {% endif %}
       <div class="row" style="justify-content:flex-end; gap:8px;">
         <a class="ghost-btn" href="{% if view.object %}{% url 'group_detail' view.object.pk %}{% else %}{% url 'group_list' %}{% endif %}">Cancel</a>
         <button class="primary-btn" type="submit">Save</button>
@@ -16,4 +26,3 @@
     </div>
   </form>
 {% endblock %}
-

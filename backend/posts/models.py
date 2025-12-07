@@ -34,6 +34,10 @@ class Group(models.Model):
     members = models.ManyToManyField(User, through="GroupMembership", related_name="joined_groups")
     color = models.CharField(max_length=16, default="#6b9bff")
     description = models.TextField(blank=True)
+    is_public = models.BooleanField(default=True)
+    cover = models.ImageField(upload_to="groups/covers/", null=True, blank=True)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:
@@ -96,6 +100,31 @@ class Post(models.Model):
             "caption": self.caption,
             "image_url": url,
             "date": self.date.isoformat() if self.date else None,
+        }
+
+
+class Comment(models.Model):
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="comments")
+    author = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="comments")
+    user_name = models.CharField(max_length=120)
+    text = models.TextField()
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="replies")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self):
+        return f"{self.user_name}: {self.text[:24]}"
+
+    def as_dict(self):
+        return {
+            "id": self.id,
+            "post_id": self.post_id,
+            "user_id": self.author_id,
+            "user_name": self.user_name,
+            "text": self.text,
+            "created_at": self.created_at.isoformat(),
         }
 
 

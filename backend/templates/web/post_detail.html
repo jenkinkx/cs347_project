@@ -14,5 +14,132 @@
   <img class="post-thumb" src="{{ object.image.url }}" alt="Image" style="width:100%; max-width:720px;" />
   <p>{{ object.caption }}</p>
   <p class="muted">{{ object.date|date:"Y-m-d" }}</p>
-{% endblock %}
 
+  <hr style="margin:24px 0;">
+  <h3>Comments</h3>
+  <div id="comment-list" class="grid" style="gap:12px; margin-bottom:16px;">
+    <p class="muted" id="comment-empty">Loading comments…</p>
+  </div>
+
+  <form id="comment-form" class="grid" style="gap:10px; max-width:720px;">
+    {% csrf_token %}
+    <input type="hidden" name="parent" id="comment-parent" />
+    <label>Leave a comment
+      <textarea name="text" id="comment-text" rows="3" required></textarea>
+    </label>
+    <div class="row" style="gap:8px;">
+      <button type="submit" class="primary-btn">Post comment</button>
+      <button type="button" class="ghost-btn" id="cancel-reply" style="display:none;">Cancel reply</button>
+    </div>
+    <p class="muted" id="comment-error" style="display:none; color:#c0392b;"></p>
+  </form>
+
+  <script>
+    (function() {
+      const postId = {{ object.id }};
+      const listEl = document.getElementById('comment-list');
+      const emptyEl = document.getElementById('comment-empty');
+      const errorEl = document.getElementById('comment-error');
+      const textEl = document.getElementById('comment-text');
+      const parentEl = document.getElementById('comment-parent');
+      const cancelReplyEl = document.getElementById('cancel-reply');
+
+      function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+      }
+
+      function renderComment(c, depth = 0) {
+        const card = document.createElement('div');
+        card.className = 'post-card';
+        card.style.padding = '10px';
+        card.style.marginLeft = depth ? `${depth * 16}px` : '0';
+
+        const meta = document.createElement('div');
+        meta.className = 'post-meta';
+        meta.innerHTML = `<span class="me">${c.user_name || 'Anonymous'}</span><span>${new Date(c.created_at).toLocaleString()}</span>`;
+        card.appendChild(meta);
+
+        const body = document.createElement('p');
+        body.textContent = c.text;
+        card.appendChild(body);
+
+        const replyBtn = document.createElement('button');
+        replyBtn.type = 'button';
+        replyBtn.className = 'ghost-btn';
+        replyBtn.textContent = 'Reply';
+        replyBtn.addEventListener('click', () => {
+          parentEl.value = c.id;
+          textEl.focus();
+          cancelReplyEl.style.display = 'inline-block';
+        });
+        card.appendChild(replyBtn);
+
+        if (c.replies && c.replies.length) {
+          c.replies.forEach(r => card.appendChild(renderComment(r, depth + 1)));
+        }
+        return card;
+      }
+
+      function renderComments(comments) {
+        listEl.innerHTML = '';
+        if (!comments.length) {
+          emptyEl.textContent = 'No comments yet.';
+          listEl.appendChild(emptyEl);
+          return;
+        }
+        comments.forEach(c => listEl.appendChild(renderComment(c)));
+      }
+
+      async function loadComments() {
+        emptyEl.textContent = 'Loading comments…';
+        listEl.innerHTML = '';
+        listEl.appendChild(emptyEl);
+        try {
+          const res = await fetch(`/api/posts/${postId}/comments/`);
+          if (!res.ok) throw new Error('Failed to load');
+          const data = await res.json();
+          const items = Array.isArray(data) ? data : (data.results || []);
+          renderComments(items);
+        } catch (err) {
+          emptyEl.textContent = 'Could not load comments.';
+        }
+      }
+
+      document.getElementById('comment-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errorEl.style.display = 'none';
+        const text = textEl.value.trim();
+        if (!text) return;
+        const payload = { text };
+        if (parentEl.value) payload.parent_id = parentEl.value;
+        try {
+          const res = await fetch(`/api/posts/${postId}/comments/`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCookie('csrftoken') || '',
+            },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error('Failed to post comment');
+          textEl.value = '';
+          parentEl.value = '';
+          cancelReplyEl.style.display = 'none';
+          await loadComments();
+        } catch (err) {
+          errorEl.textContent = 'Could not post comment. Please try again.';
+          errorEl.style.display = 'block';
+        }
+      });
+
+      cancelReplyEl.addEventListener('click', () => {
+        parentEl.value = '';
+        cancelReplyEl.style.display = 'none';
+      });
+
+      loadComments();
+    })();
+  </script>
+{% endblock %}

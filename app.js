@@ -114,7 +114,7 @@
           </div>
           <div class="row" style="justify-content:flex-end; gap:8px;">
             <button class="ghost-btn" data-close>Close</button>
-            <button class="primary-btn" id="logoutBtn">Sign out</button>
+            <button class="logout-btn" id="logoutBtn">Sign out</button>
           </div>
         </div>
       ` : `
@@ -282,6 +282,15 @@
     return data;
   }
 
+  async function fetchComments(postId) {
+    const res = await getJSON(`/posts/${postId}/comments/`);
+    return res?.results || [];
+  }
+
+  async function createComment(postId, text, parentId = null) {
+    return postJSON(`/posts/${postId}/comments/`, { text, parent_id: parentId });
+  }
+
   // --- State (loaded from backend) ---------------------------------------
   let currentUser = { id: 'anon', name: 'Guest', initials: 'GU' };
   let groups = [];
@@ -301,12 +310,18 @@
     const apiGroups = resp?.results || [];
     groups = apiGroups.map((g, idx) => {
       const memberNames = Array.isArray(g.member_usernames) ? g.member_usernames : [];
+      const memberDetails = Array.isArray(g.member_details) ? g.member_details : [];
       const membersFromIds = Array.isArray(g.members)
-        ? g.members.map((id) => ({ id: String(id), name: 'Member' }))
+        ? g.members.map((id) => {
+          const detail = memberDetails.find((m) => String(m.id) === String(id));
+          return { id: String(id), name: detail?.name || detail?.username || 'Member' };
+        })
         : [];
       const members = membersFromIds.length
         ? membersFromIds
-        : memberNames.map((n) => ({ id: null, name: n }));
+        : memberDetails.length
+          ? memberDetails.map((m) => ({ id: String(m.id), name: m.name || m.username || 'Member' }))
+          : memberNames.map((n) => ({ id: n, name: n }));
       const parsedCount = Number(g.member_count);
       const memberCount = Number.isFinite(parsedCount)
         ? parsedCount
@@ -316,10 +331,11 @@
         name: g.name,
         color: g.color || '#6b9bff',
         description: g.description || '',
+        cover: g.cover_url || '',
         members,
         memberNames,
         memberCount,
-        isPrivate: Boolean(g.is_private),
+        isPrivate: !g.is_public,
         isCreator: Boolean(g.is_creator),
         isMember: g.is_member !== false,
         posts: [],
@@ -335,11 +351,14 @@
         const res = await getJSON(`/posts/?group_id=${encodeURIComponent(g.id)}`);
         g.posts = (res?.results || []).map((p) => ({
           id: p.id,
-          userId: null,
-          userName: p.user_name || 'Unknown',
+          userId: p.author_id ? String(p.author_id) : (p.author || p.user_name || 'unknown'),
+          userName: p.user_name || p.author || 'Unknown',
           imageUrl: p.image_url || svgPlaceholder('IMG'),
           caption: p.caption || '',
           date: p.date || todayISO(),
+          comments: Array.isArray(p.comments) ? p.comments : [],
+          commentCount: Number(p.comment_count || (p.comments?.length || 0)),
+          latestComment: Array.isArray(p.comments) && p.comments.length ? p.comments[0].text : '',
         }));
       } catch (e) {
         g.posts = [];
@@ -481,6 +500,7 @@
       const postedToday = (g.posts || []).some(p => (p && (p.userId === currentUser.id || p.userName === me) && p.date === todayISO()));
       pane.innerHTML = `
         <div class="group-card">
+          ${g.cover ? `<div class="cover-banner"><img src="${g.cover}" alt="${g.name} cover" /></div>` : ''}
           <div class="group-hero">
             <div class="row" style="gap:12px; align-items:center;">
               <span class="group-dot" style="width:18px; height:18px; background:${g.color}"></span>
@@ -529,6 +549,7 @@
     const card = document.createElement('section');
     card.className = 'group-card';
     card.innerHTML = `
+      ${group.cover ? `<div class="cover-thumb"><img src="${group.cover}" alt="${group.name} cover" /></div>` : ''}
       <div class="group-header">
         <span class="group-dot" style="background:${group.color}"></span>
         <div class="row" style="gap:12px">
@@ -541,7 +562,7 @@
           </div>
         </div>
         <div class="group-actions">
-          <button class="ghost-btn" aria-label="Leaderboard" title="Leaderboard" data-leaderboard>🏆</button>
+          <button class="ghost-btn" aria-label="Leaderboard" title="Leaderboard" data-leaderboard>🏆 Leaderboard</button>
           <button class="expand-btn" aria-label="Toggle details">${group.expanded ? 'Collapse' : 'Expand'}</button>
           <button class="plus-btn" title="Add post" aria-label="Add post"></button>
         </div>
@@ -586,6 +607,7 @@
   function renderPostCardHTML(post) {
     if (!post) return '';
     const isMe = (post.userId === currentUser.id) || (post.userName === (currentUser.name || ''));
+    const commentBlurb = post.latestComment ? post.latestComment : (post.commentCount ? 'View comments' : '');
     return `
       <article class="post-card" data-post-id="${post.id}">
         <img class="post-thumb" src="${post.imageUrl}" alt="Post by ${post.userName}" />
@@ -593,6 +615,7 @@
           <span class="${isMe ? 'me' : ''}">${post.userName}</span>
           <button class="icon" title="Open">🔍</button>
         </div>
+        ${post.commentCount ? `<div class="comment-preview">💬 ${post.commentCount} • ${commentBlurb}</div>` : ''}
       </article>
     `;
   }
@@ -743,7 +766,7 @@
           el.className = `side-item ${String(g.id) === String(selectedGroupId) ? 'selected' : ''}`;
           const postedToday = (g.posts || []).some(p => (p.userId === currentUser.id || p.userName === (currentUser.name||'')) && p.date === todayISO());
           el.innerHTML = `
-            <span class="group-dot" style="background:${g.color}"></span>
+            ${g.cover ? `<span class="cover-thumb"><img src="${g.cover}" alt="${g.name} cover"></span>` : `<span class="group-dot" style="background:${g.color}"></span>`}
             <div class="side-meta">
               <div class="name">${g.name}</div>
               <div class="muted small">${Array.isArray(g.members) ? g.members.length : 0} members • ${postedToday ? 'Posted today ✅' : 'Post today required'}</div>
@@ -760,63 +783,49 @@
       const photos = (g.posts || []);
       pane.innerHTML = `
         <div class="group-card">
+          ${g.cover ? `<div class="cover-banner"><img src="${g.cover}" alt="${g.name} cover" /></div>` : ''}
           <div class="group-hero">
             <div class="row" style="gap:12px; align-items:center;">
               <span class="group-dot" style="width:18px; height:18px; background:${g.color}"></span>
               <h2 class="group-title" style="margin:0; font-size:22px;">${g.name}</h2>
             </div>
             <div class="row" style="gap:8px;">
-              <span class="chip">${Array.isArray(g.members) ? g.members.length : 0} member${(Array.isArray(g.members) ? g.members.length : 0) === 1 ? '' : 's'}</span>
+              <span class="chip">${(Array.isArray(g.members) ? g.members.length : (Array.isArray(g.memberNames) ? g.memberNames.length : 0))} member${((Array.isArray(g.members) ? g.members.length : (Array.isArray(g.memberNames) ? g.memberNames.length : 0)) === 1) ? '' : 's'}</span>
               ${uniqueUsers.slice(0,6).map(n => `<span class="chip">${n}</span>`).join('')}
             </div>
             <div class="muted">${g.description || 'No description'}</div>
             <div class="row" style="gap:8px;">
               <button class="primary-btn" id="addPhotoBtn">+ Add Photo</button>
+              <button class="ghost-btn" data-act="lb">🏆 Leaderboard</button>
             </div>
           </div>
           <div class="group-content">
             ${photos.length ? `<div class="post-grid">${photos.map(renderPostCardHTML).join('')}</div>` : `<div class="muted" style="padding:12px;">No photos yet. Be the first to post!</div>`}
-    const grid = $('#groupGrid');
-    if (!groups.length) {
-      grid.innerHTML = `
-        <section class="group-card" style="grid-column:1 / -1; text-align:center; padding:32px;">
-          <div class="muted" style="margin-bottom:12px;">No groups yet.</div>
-          <div class="row" style="gap:8px; justify-content:center;">
-            <button class="primary-btn" id="groupsJoinCta">Join Group</button>
-            <button class="ghost-btn" id="groupsCreateCta">Create Group</button>
-          </div>
-        </section>
-      `;
-      $('#groupsJoinCta').addEventListener('click', () => openJoinGroupDialog());
-      $('#groupsCreateCta').addEventListener('click', () => openGroupEditor());
-      return;
-    }
-    groups.forEach(g => {
-      const postedToday = (g.posts || []).some(p => (p.userId === currentUser.id || p.userName === (currentUser.name || '')) && p.date === todayISO());
-      const memberCount = g.memberCount ?? g.members.length;
-      const memberLabel = `${memberCount} member${memberCount === 1 ? '' : 's'}`;
-      const tile = document.createElement('div');
-      tile.className = 'group-tile';
-      tile.innerHTML = `
-        <div class="tile-head">
-          <span class="group-dot" style="background:${g.color}"></span>
-          <div>
-            <div class="row" style="gap:6px; align-items:center;">
-              <div style="font-weight:600">${g.name}</div>
-              ${g.isPrivate ? '<span class="chip chip-private">Private</span>' : ''}
-            </div>
-            <div class="muted" style="font-size:13px">${memberLabel} • ${postedToday ? 'Posted today ✅' : 'Post today required'}</div>
-          </div>
-          <div class="tile-actions">
-            <button class="ghost-btn" data-act="open">Open</button>
-            ${g.isCreator ? '<button class="ghost-btn" data-act="edit">Edit</button>' : ''}
-            <button class="ghost-btn" data-act="lb">🏆</button>
           </div>
         </div>
       `;
-      const addBtn = $('#addPhotoBtn', pane);
-      if (addBtn) addBtn.addEventListener('click', () => openAddPostDialog(g.id));
+      const addPhoto = $('#addPhotoBtn', pane);
+      if (addPhoto) addPhoto.addEventListener('click', () => openAddPostDialog(g.id));
+      const lbBtn = $('[data-act="lb"]', pane);
+      if (lbBtn) lbBtn.addEventListener('click', () => openLeaderboardModal(g, 'weekly'));
       $$('.post-card', pane).forEach((el) => attachPostHandlers(el, g.id));
+    }
+    if (!groups.length) {
+      const detail = $('#groupDetail');
+      if (detail) {
+        detail.innerHTML = `
+          <section class="group-card" style="text-align:center; padding:32px;">
+            <div class="muted" style="margin-bottom:12px;">No groups yet.</div>
+            <div class="row" style="gap:8px; justify-content:center;">
+              <button class="primary-btn" id="groupsJoinCta">Join Group</button>
+              <button class="ghost-btn" id="groupsCreateCta">Create Group</button>
+            </div>
+          </section>
+        `;
+        $('#groupsJoinCta').addEventListener('click', () => openJoinGroupDialog());
+        $('#groupsCreateCta').addEventListener('click', () => openGroupEditor());
+      }
+      return;
     }
     q.addEventListener('input', () => { renderSide(); });
     // Ensure we have a selection by default
@@ -862,7 +871,7 @@
       el.className = 'group-tile';
       el.innerHTML = `
         <div class="tile-head">
-          <span class="group-dot" style="background:${g.color}"></span>
+          ${g.cover ? `<span class="cover-thumb" style="width:40px; height:40px;"><img src="${g.cover}" alt="${g.name} cover" /></span>` : `<span class="group-dot" style="background:${g.color}"></span>`}
           <div>
             <div style="font-weight:600">${g.name}</div>
             <div class="muted" style="font-size:13px">${g.members.length} members</div>
@@ -1018,10 +1027,159 @@
       </div>
       <div><strong>${post.userName}</strong></div>
       <div class="muted">${post.caption || ''}</div>
+      <div class="comments">
+        <div class="row" style="justify-content:space-between;">
+          <strong>Comments</strong>
+          <span class="muted" id="commentCount"></span>
+        </div>
+        <div id="commentList" class="comment-list muted">Loading comments...</div>
+        <div id="replyMeta" class="muted hidden" style="font-size:12px; gap:6px; align-items:center;"></div>
+        ${currentUser && currentUser.id !== 'anon' ? `
+          <div class="row" style="gap:8px;">
+            <input id="commentInput" class="search-input" placeholder="Add a comment..." />
+            <button class="primary-btn" id="commentSubmit">Post</button>
+          </div>
+        ` : `<div class="muted">Sign in to add a comment.</div>`}
+      </div>
     `;
     openModal('Post', wrap, {
       onOpen(root) {
         if ($('#editBtn', wrap)) $('#editBtn', wrap).addEventListener('click', () => { closeModal(); openEditPostModal(post, group); });
+        const listEl = $('#commentList', wrap);
+        const countEl = $('#commentCount', wrap);
+        const replyMeta = $('#replyMeta', wrap);
+        let commentTree = Array.isArray(post.comments) ? post.comments : [];
+        let replyTo = null;
+
+        function renderComments(list) {
+          if (!listEl) return;
+          if (!list || !list.length) {
+            listEl.innerHTML = '<div class="muted">No comments yet.</div>';
+            if (countEl) countEl.textContent = '';
+            return;
+          }
+          listEl.classList.remove('muted');
+
+          function renderTree(nodes, level = 0) {
+            return nodes.map(c => {
+              const replies = Array.isArray(c.replies) && c.replies.length ? renderTree(c.replies, level + 1) : '';
+              return `
+                <div class="comment" data-id="${c.id}" style="margin-left:${level * 12}px;">
+                  <div class="row" style="justify-content:space-between;">
+                    <strong>${c.user_name || 'User'}</strong>
+                    <span class="muted" style="font-size:12px;">${fmtDate(new Date(c.created_at))}</span>
+                  </div>
+                  <div>${c.text}</div>
+                  <div class="row" style="justify-content:flex-end; gap:6px;">
+                    <button class="ghost-btn" data-reply="${c.id}" style="padding:4px 6px; font-size:12px;">Reply</button>
+                  </div>
+                </div>
+                ${replies}
+              `;
+            }).join('');
+          }
+
+          listEl.innerHTML = renderTree(list);
+          function countNodes(nodes) {
+            return nodes.reduce((acc, n) => acc + 1 + (Array.isArray(n.replies) ? countNodes(n.replies) : 0), 0);
+          }
+          const totalCount = countNodes(list);
+          if (countEl) countEl.textContent = `${totalCount} comment${totalCount === 1 ? '' : 's'}`;
+
+          $$('[data-reply]', listEl).forEach(btn => {
+            btn.addEventListener('click', () => {
+              replyTo = btn.dataset.reply;
+              const target = findCommentById(commentTree, replyTo);
+              if (replyMeta) {
+                replyMeta.classList.remove('hidden');
+                replyMeta.innerHTML = `
+                  <span>Replying to <strong>${target?.user_name || 'comment'}</strong></span>
+                  <button class="ghost-btn" id="clearReply" style="padding:4px 6px; font-size:12px;">Cancel</button>
+                `;
+                $('#clearReply', replyMeta)?.addEventListener('click', () => clearReply());
+              }
+              const input = $('#commentInput', wrap);
+              if (input) input.focus();
+            });
+          });
+        }
+
+        function clearReply() {
+          replyTo = null;
+          if (replyMeta) {
+            replyMeta.classList.add('hidden');
+            replyMeta.innerHTML = '';
+          }
+        }
+
+        function findCommentById(nodes, id) {
+          for (const c of nodes || []) {
+            if (String(c.id) === String(id)) return c;
+            const found = findCommentById(c.replies || [], id);
+            if (found) return found;
+          }
+          return null;
+        }
+
+        function insertComment(tree, parentId, newComment) {
+          if (!parentId) {
+            tree.unshift(newComment);
+            return true;
+          }
+          for (const c of tree) {
+            if (String(c.id) === String(parentId)) {
+              c.replies = c.replies || [];
+              c.replies.unshift(newComment);
+              return true;
+            }
+            if (c.replies && insertComment(c.replies, parentId, newComment)) return true;
+          }
+          return false;
+        }
+
+        async function loadComments() {
+          if (listEl) listEl.innerHTML = '<div class="muted">Loading comments...</div>';
+          try {
+            const items = await fetchComments(post.id);
+            commentTree = items;
+            post.comments = items;
+            const countNodes = (nodes) => nodes.reduce((acc, n) => acc + 1 + (Array.isArray(n.replies) ? countNodes(n.replies) : 0), 0);
+            post.commentCount = countNodes(items);
+            renderComments(items);
+          } catch (e) {
+            if (listEl) listEl.innerHTML = '<div class="muted">Unable to load comments.</div>';
+          }
+        }
+
+        loadComments();
+
+        const submit = $('#commentSubmit', wrap);
+        if (submit) {
+          submit.addEventListener('click', async () => {
+            if (!currentUser || currentUser.id === 'anon') { openAuthModal(); return; }
+            const input = $('#commentInput', wrap);
+            const text = (input?.value || '').trim();
+            if (!text) return;
+            submit.disabled = true;
+            submit.textContent = 'Posting...';
+            try {
+              const created = await createComment(post.id, text, replyTo);
+              input.value = '';
+              if (!commentTree) commentTree = [];
+              insertComment(commentTree, replyTo, { ...created, replies: [] });
+              clearReply();
+              post.comments = commentTree;
+              post.commentCount = (post.commentCount || 0) + 1;
+              if (!replyTo) post.latestComment = created.text;
+              renderComments(commentTree);
+            } catch (e) {
+              alert(e?.data?.detail || e.message || 'Failed to post comment');
+            } finally {
+              submit.disabled = false;
+              submit.textContent = 'Post';
+            }
+          });
+        }
       }
     });
   }
@@ -1069,6 +1227,7 @@
       return;
     }
     const model = group ? { ...group } : { name: '', color: '#6b9bff', description: '', isPrivate: false };
+    let coverFile = null;
     const wrap = document.createElement('div');
     wrap.innerHTML = `
       <div class="grid">
@@ -1081,6 +1240,10 @@
         <label>Description
           <textarea id="gDesc" class="search-input" rows="3" placeholder="What\'s this group about?">${model.description}</textarea>
         </label>
+        <label>Cover Image
+          <input id="gCover" type="file" accept="image/*" />
+          ${model.cover ? `<div class="muted" style="font-size:12px;">Current cover set</div>` : '<div class="muted" style="font-size:12px;">Optional</div>'}
+        </label>
         
         <div class="row" style="justify-content:flex-end; gap:8px;">
           ${!isNew ? '<button class="ghost-btn" id="delete">Delete</button>' : ''}
@@ -1090,24 +1253,37 @@
       </div>
     `;
     openModal(isNew ? 'Create Group' : 'Edit Group', wrap, { onOpen(){
+      const coverInput = $('#gCover', wrap);
+      if (coverInput) coverInput.addEventListener('change', (e) => { coverFile = e.target.files?.[0] || null; });
       $('#save', wrap).addEventListener('click', async () => {
         const name = ($('#gName', wrap).value || '').trim() || 'Untitled Group';
         const color = $('#gColor', wrap).value;
         const description = ($('#gDesc', wrap).value || '').trim();
+        const isPrivate = Boolean($('#gPrivate', wrap)?.checked);
         try {
           if (isNew) {
-            const created = await postJSON('/groups/', { name, color, description });
+            const created = await postJSON('/groups/', { name, color, description, is_public: !isPrivate });
             // Reload from backend to normalize shape and fetch posts
             await loadGroups();
             // Focus the newly created group on Home
             selectedGroupId = created?.id || selectedGroupId;
             saveState();
-            // Navigate to Home to surface the new group
+            const ng = groups.find(x => String(x.id) === String(created.id));
+            if (coverFile && ng) {
+              const fd = new FormData();
+              fd.append('cover', coverFile);
+              try { await uploadForm(`/groups/${ng.id}/cover/`, fd); await loadGroups(); } catch {}
+            }
             if (routeFromHash() !== 'groups') location.hash = '#groups';
           } else {
-            const g = await patchJSON(`/groups/${group.id}/`, { name, color, description });
+            const g = await patchJSON(`/groups/${group.id}/`, { name, color, description, is_public: !isPrivate });
             const idx = groups.findIndex(x => x.id === group.id);
-            if (idx !== -1) groups[idx] = { ...groups[idx], ...g };
+            if (idx !== -1) groups[idx] = { ...groups[idx], ...g, cover: g.cover_url || groups[idx].cover };
+            if (coverFile) {
+              const fd = new FormData();
+              fd.append('cover', coverFile);
+              try { await uploadForm(`/groups/${group.id}/cover/`, fd); await loadGroups(); } catch {}
+            }
           }
           saveState();
           closeModal();

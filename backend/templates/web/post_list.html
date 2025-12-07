@@ -2,13 +2,14 @@
 {% block title %}Posts · Daily Groups{% endblock %}
 {% block content %}
   <div class="row" style="justify-content:space-between;">
-    <h1 style="margin:0;">Posts</h1>
+    <h1 style="margin:0;">Posts from today {{ today|date:"Y-m-d" }}</h1>
     <div class="row" style="gap:8px;">
       <a class="ghost-btn" href="{% url 'export_posts_csv' %}">Export CSV</a>
       <a class="ghost-btn" href="{% url 'import_posts_csv' %}">Import CSV</a>
       <a class="primary-btn" href="{% url 'post_create' %}">+ New Post</a>
     </div>
   </div>
+  <p class="muted">Showing your posts and posts from groups you belong to.</p>
   <form method="get" class="row" style="margin:10px 0;">
     <input class="search-input" type="search" name="q" value="{{ request.GET.q }}" placeholder="Search captions..." />
     <button class="ghost-btn" type="submit">Search</button>
@@ -53,4 +54,3 @@
   </div>
   {% endif %}
 {% endblock %}
-

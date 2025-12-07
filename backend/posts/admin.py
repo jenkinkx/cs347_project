@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Group, Post, GroupMembership, Profile, AuditLog, GroupInvite
+from .models import Group, Post, GroupMembership, Profile, AuditLog, GroupInvite, Comment
 
 
 @admin.register(Group)
@@ -35,3 +35,10 @@ class AuditLogAdmin(admin.ModelAdmin):
     list_display = ("created_at", "user", "action", "model", "object_id")
     list_filter = ("action", "model")
     search_fields = ("object_id", "details")
+
+
+@admin.register(Comment)
+class CommentAdmin(admin.ModelAdmin):
+    list_display = ("id", "post", "user_name", "parent", "created_at")
+    list_filter = ("created_at",)
+    search_fields = ("text", "user_name")

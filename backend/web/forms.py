@@ -26,9 +26,12 @@ class PostForm(forms.ModelForm):
 
 
 class GroupForm(forms.ModelForm):
+    start_date = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    end_date = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
+
     class Meta:
         model = Group
-        fields = ("name", "color", "description")
+        fields = ("name", "color", "description", "cover", "is_public", "start_date", "end_date")
 
 
 class ProfileForm(forms.ModelForm):
@@ -39,4 +42,3 @@ class ProfileForm(forms.ModelForm):
 
 class CSVImportForm(forms.Form):
     file = forms.FileField(help_text="Upload CSV with columns: group_name, caption")
-
