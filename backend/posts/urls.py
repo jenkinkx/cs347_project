@@ -21,7 +21,7 @@ urlpatterns = [
     path("register/", RegisterView.as_view(), name="auth_register"),
 
     # Function-based endpoints
-    path("groups/<int:group_id>/", group_detail, name="group_detail"),
+    #path("groups/<int:group_id>/", group_detail, name="group_detail"),
     path("posts/upload/", upload_post, name="upload_post"),
     path("api/upload-url/", start_photo_upload),
     path("api/confirm-upload/", create_post_from_s3, name="confirm_upload"),
